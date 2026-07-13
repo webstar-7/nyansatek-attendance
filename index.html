@@ -1,0 +1,1961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>NYANSATEK Attendance System</title>
+<script>
+const SUPABASE_URL      = "https://efgckodcvtzrjiabcktf.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Kd560On82iHu2UadJow4lQ_BLP1Hr4L";
+const SMS_API_KEY       = "";           // Arkesel API key
+const SMS_SENDER_ID     = "NYANSATEK";
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+:root{--p:#111827;--a:#d4af37;--bg:#f3f4f6;--b:#e5e7eb;--g:#9ca3af;--s:#10b981;--d:#ef4444;--t:#1f2937;--bl:#2563eb;}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif;}
+body{background:var(--bg);color:var(--t);display:flex;flex-direction:column;min-height:100vh;}
+
+/* AUTH */
+.as{flex:1;display:flex;align-items:center;justify-content:center;background:var(--p);}
+.ac{background:#fff;border-radius:10px;padding:36px;width:360px;border-top:4px solid var(--a);box-shadow:0 10px 30px rgba(0,0,0,.3);}
+.ac h1{font-size:1.2rem;color:var(--p);margin-bottom:4px;}
+.ac .sub{color:var(--g);font-size:.82rem;margin-bottom:20px;}
+.aerr{background:#fee2e2;color:#991b1b;padding:9px 12px;border-radius:5px;font-size:.82rem;margin-bottom:12px;display:none;}
+.aerr.on{display:block;}
+
+/* HEADER */
+header{background:var(--p);color:#fff;padding:0 18px;height:52px;display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--a);flex-shrink:0;}
+.brand{font-size:.95rem;font-weight:700;color:var(--a);}
+.brand em{color:var(--g);font-size:.72rem;font-weight:400;font-style:normal;margin-left:7px;}
+.hr{display:flex;align-items:center;gap:8px;}
+nav button{background:transparent;border:1px solid transparent;color:var(--g);padding:4px 10px;font-weight:600;cursor:pointer;border-radius:4px;font-size:.78rem;transition:all .15s;}
+nav button.on{border-color:var(--a);color:#fff;background:rgba(212,175,55,.12);}
+nav .lo{color:#fca5a5!important;}
+
+/* LAYOUT */
+main{flex:1;overflow:hidden;}
+.view{display:none;}
+
+/* GATE VIEW */
+#gv.on{display:flex;flex-direction:column;height:calc(100vh - 52px - 36px);background:#0f172a;}
+.gate-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1e293b;}
+.gate-inst{font-size:1rem;font-weight:700;color:#fff;}
+.gate-time{font-size:1.6rem;font-weight:700;color:var(--a);font-family:'Courier New',monospace;}
+.gate-date{font-size:.75rem;color:var(--g);text-align:right;}
+.gate-mode{display:flex;gap:0;}
+.mode-btn{padding:6px 16px;border:2px solid #334155;background:none;color:var(--g);font-weight:600;font-size:.8rem;cursor:pointer;transition:all .15s;}
+.mode-btn:first-child{border-radius:5px 0 0 5px;}
+.mode-btn:last-child{border-radius:0 5px 5px 0;border-left:none;}
+.mode-btn.on{background:var(--a);border-color:var(--a);color:var(--p);}
+
+.scan-zone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:20px;}
+.scan-box{background:#1e293b;border:2px dashed #334155;border-radius:12px;padding:30px 40px;text-align:center;width:100%;max-width:480px;}
+.scan-icon{font-size:3rem;margin-bottom:10px;}
+.scan-label{color:var(--g);font-size:.9rem;margin-bottom:14px;}
+#scan-input{width:100%;padding:14px 16px;background:#0f172a;border:2px solid #334155;border-radius:8px;color:#fff;font-size:1.1rem;text-align:center;letter-spacing:2px;}
+#scan-input:focus{outline:none;border-color:var(--a);}
+#scan-input::placeholder{color:#334155;letter-spacing:0;}
+.last-scan{font-size:.78rem;color:var(--g);text-align:center;min-height:20px;}
+
+/* RESULT OVERLAY */
+#result-overlay{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
+#result-overlay.on{display:flex;}
+.result-card{background:#fff;border-radius:14px;width:100%;max-width:420px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:popIn .25s ease;}
+@keyframes popIn{from{transform:scale(.85);opacity:0;}to{transform:scale(1);opacity:1;}}
+.rc-banner{padding:20px;text-align:center;color:#fff;}
+.rc-banner.allowed{background:var(--s);}
+.rc-banner.denied{background:var(--d);}
+.rc-icon{font-size:3rem;margin-bottom:6px;}
+.rc-status{font-size:1.4rem;font-weight:800;letter-spacing:1px;}
+.rc-body{padding:20px;}
+.rc-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid var(--b);margin:0 auto 10px;display:block;}
+.rc-initials{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:700;color:#fff;margin:0 auto 10px;}
+.rc-name{font-size:1.2rem;font-weight:700;text-align:center;margin-bottom:2px;}
+.rc-dept{text-align:center;color:var(--g);font-size:.85rem;margin-bottom:14px;}
+.rc-info{background:var(--bg);border-radius:8px;padding:12px;}
+.rc-row{display:flex;justify-content:space-between;font-size:.82rem;padding:3px 0;}
+.rc-row span:first-child{color:var(--g);}
+.rc-row span:last-child{font-weight:600;}
+.rc-timer{text-align:center;padding:12px;font-size:.78rem;color:var(--g);border-top:1px solid var(--b);}
+.rc-timer strong{color:var(--p);}
+
+/* ADMIN VIEW */
+#av.on{display:block;padding:16px;overflow-y:auto;height:calc(100vh - 52px - 36px);}
+
+/* MASTER VIEW */
+#mv.on{display:block;padding:16px;overflow-y:auto;height:calc(100vh - 52px - 36px);}
+
+/* SHARED */
+.fg{margin-bottom:9px;}
+.fg label{display:block;font-size:.71rem;font-weight:600;margin-bottom:2px;color:#4b5563;}
+.fg input,.fg select,.fg textarea{width:100%;padding:7px 9px;border:1px solid var(--b);border-radius:4px;font-size:.81rem;}
+.fg input:focus,.fg select:focus{outline:none;border-color:var(--a);}
+.card{background:#fff;border-radius:7px;border:1px solid var(--b);padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
+.card h2{font-size:1rem;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid var(--bg);color:var(--p);}
+.btn{background:var(--p);color:#fff;padding:7px 14px;border:none;border-radius:4px;font-weight:600;cursor:pointer;font-size:.83rem;transition:all .15s;}
+.btn:hover{opacity:.84;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.ba{background:var(--a);color:var(--p);}
+.bg2{background:var(--s);color:#fff;}
+.bd{background:var(--d);color:#fff;}
+.bf{width:100%;padding:9px;font-size:.85rem;}
+.bsm{padding:4px 10px;font-size:.76rem;}
+.hint{font-size:.76rem;color:var(--g);margin-bottom:8px;}
+.es{text-align:center;padding:28px;color:var(--g);border:1px dashed var(--b);border-radius:5px;margin-top:10px;}
+.badge{padding:2px 7px;border-radius:11px;font-size:.7rem;font-weight:600;}
+.bg{background:#d1fae5;color:#065f46;}
+.by{background:#fef3c7;color:#92400e;}
+.br{background:#fee2e2;color:#991b1b;}
+.tbar{display:flex;flex-wrap:wrap;border-bottom:2px solid var(--b);margin-bottom:12px;gap:2px;}
+.tb{background:none;border:none;padding:6px 11px;font-size:.78rem;font-weight:600;cursor:pointer;color:var(--g);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .12s;white-space:nowrap;}
+.tb.on{color:var(--p);border-bottom-color:var(--a);}
+.tp{display:none;}
+.tp.on{display:block;}
+table{width:100%;border-collapse:collapse;font-size:.8rem;}
+th{background:var(--bg);padding:8px 10px;font-weight:600;border-bottom:2px solid var(--b);text-align:left;font-size:.74rem;}
+td{padding:8px 10px;border-bottom:1px solid var(--b);vertical-align:middle;}
+.sdrop{position:relative;}
+.sdrop input{width:100%;padding:6px 8px;border:1px solid var(--b);border-radius:4px;font-size:.81rem;}
+.sdlist{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--b);border-radius:4px;max-height:180px;overflow-y:auto;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.1);display:none;}
+.sdlist.on{display:block;}
+.photo-zone{border:2px dashed var(--b);border-radius:7px;padding:10px;text-align:center;cursor:pointer;margin-bottom:9px;transition:border-color .15s;}
+.photo-zone:hover{border-color:var(--a);}
+.photo-zone img{width:64px;height:64px;border-radius:6px;object-fit:cover;margin:0 auto 4px;display:block;}
+.sdi{padding:7px 10px;cursor:pointer;font-size:.8rem;border-bottom:1px solid var(--b);}
+.sdi:hover{background:var(--bg);}
+.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+@media(max-width:700px){.admin-grid{grid-template-columns:1fr;}}
+
+/* LOADING */
+.lov{position:fixed;inset:0;background:rgba(17,24,39,.6);display:none;align-items:center;justify-content:center;color:#fff;font-weight:600;z-index:999;}
+.lov.on{display:flex;}
+
+/* FOOTER */
+footer{background:var(--p);color:var(--g);text-align:center;padding:9px;font-size:.75rem;flex-shrink:0;}
+footer strong{color:var(--a);}
+
+/* PRINT */
+@media print{
+  header,footer,nav,.btn,.tbar,.lov{display:none!important;}
+  body{background:#fff!important;}
+}
+.photo-zone{border:2px dashed var(--b);border-radius:7px;padding:10px;text-align:center;cursor:pointer;margin-bottom:9px;transition:border-color .15s;}
+.photo-zone:hover{border-color:var(--a);}
+.photo-zone img{width:64px;height:64px;border-radius:6px;object-fit:cover;margin:0 auto 4px;display:block;}
+.thumb{width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;}
+</style>
+</head>
+<body>
+<div class="lov" id="lov">Processing...</div>
+
+<!-- AUTH -->
+<div class="as" id="ls">
+  <div class="ac">
+    <h1>NYANSATEK Attendance</h1>
+    <p class="sub">Sign in to your institution</p>
+    <div class="aerr" id="le"></div>
+    <form id="lf">
+      <div class="fg"><label>Institution Name</label>
+        <input type="text" id="lb" placeholder="e.g. GHANA INTERNATIONAL SCHOOL" required></div>
+      <div class="fg"><label>Password</label>
+        <input type="password" id="lp" required></div>
+      <button type="submit" class="btn ba bf" id="lbtn">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<!-- FORCE PASSWORD -->
+<div class="as" id="fps" style="display:none;">
+  <div class="ac">
+    <h1>Set Your Password</h1>
+    <p class="sub">First login — choose a private password.</p>
+    <div class="aerr" id="fpe"></div>
+    <form id="fpf">
+      <div class="fg"><label>New Password (min 8 chars)</label>
+        <input type="password" id="np" minlength="8" required></div>
+      <div class="fg"><label>Confirm Password</label>
+        <input type="password" id="cp2" minlength="8" required></div>
+      <button type="submit" class="btn ba bf">Save &amp; Continue</button>
+    </form>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none;flex-direction:column;min-height:100vh;">
+  <header>
+    <div class="brand"><span id="hbiz">—</span><em>| Attendance System</em></div>
+    <div class="hr"><nav id="nav"></nav></div>
+  </header>
+  <main>
+
+    <!-- GATE VIEW -->
+    <div id="gv" class="view">
+      <div class="gate-header">
+        <div>
+          <div class="gate-inst" id="gate-inst-name">—</div>
+          <div style="font-size:.72rem;color:var(--g);margin-top:2px;" id="gate-inst-type">—</div>
+        </div>
+        <div style="text-align:center;">
+          <div class="gate-mode">
+            <button class="mode-btn on" id="mode-entry" onclick="setMode('entry')">&#8680; ENTRY</button>
+            <button class="mode-btn" id="mode-exit" onclick="setMode('exit')">&#8678; EXIT</button>
+            <button class="mode-btn" id="mode-pickup" onclick="setMode('pickup')" style="border-left:none;background:#7c3aed;border-color:#7c3aed;color:#fff;">&#128118; PICKUP</button>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div class="gate-time" id="gtime">00:00:00</div>
+          <div class="gate-date" id="gdate">—</div>
+        </div>
+      </div>
+
+      <div class="scan-zone">
+        <div class="scan-box">
+          <div class="scan-icon">&#128247;</div>
+          <div class="scan-label">Scan ID card or QR code</div>
+          <input type="text" id="scan-input" placeholder="Waiting for scan..." autocomplete="off" autocorrect="off">
+        </div>
+        <div class="last-scan" id="last-scan">No scans yet today.</div>
+      </div>
+
+      <!-- RESULT OVERLAY -->
+      <div id="result-overlay">
+        <div class="result-card">
+          <div class="rc-banner" id="rc-banner">
+            <div class="rc-icon" id="rc-icon">✅</div>
+            <div class="rc-status" id="rc-status">ALLOWED</div>
+          </div>
+          <div class="rc-body">
+            <div id="rc-photo-wrap"></div>
+            <div class="rc-name" id="rc-name">—</div>
+            <div class="rc-dept" id="rc-dept">—</div>
+            <div class="rc-info">
+              <div class="rc-row"><span>Event</span><span id="rc-event">—</span></div>
+              <div class="rc-row"><span>Time</span><span id="rc-time">—</span></div>
+              <div class="rc-row" id="rc-fee-row" style="display:none;">
+                <span>Fee Status</span><span id="rc-fee">—</span>
+              </div>
+              <div class="rc-row" id="rc-bal-row" style="display:none;">
+                <span>Outstanding</span><span id="rc-bal" style="color:var(--d);">—</span>
+              </div>
+              <div class="rc-row" id="rc-notif-row">
+                <span>Notification</span><span id="rc-notif">—</span>
+              </div>
+            </div>
+          </div>
+          <div class="rc-timer" id="rc-timer">Resetting in <strong id="rc-count">5</strong> seconds...</div>
+        </div>
+      </div>
+      <!-- PICKUP OVERLAY -->
+      <div id="pickup-overlay" style="position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.7);">
+        <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);">
+          <div style="background:#7c3aed;color:#fff;padding:16px 20px;">
+            <div style="font-size:1.3rem;font-weight:800;">&#128118; STUDENT PICKUP</div>
+            <div id="pu-student-name" style="font-size:.9rem;opacity:.85;margin-top:2px;">—</div>
+          </div>
+          <div style="padding:16px;">
+            <p style="font-size:.8rem;color:var(--g);margin-bottom:12px;">Verify the person collecting this student against the photos below. Only confirm if there is a clear match.</p>
+            <div id="pu-persons" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:14px;"></div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="denyPickup()" class="btn bd" style="flex:1;">&#10060; Deny / No Match</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN VIEW -->
+    <div id="av" class="view">
+      <div class="card">
+        <h2>Institution Management</h2>
+        <div class="tbar" id="atbar">
+          <button class="tb on" onclick="swTab('mb')">&#128101; Members</button>
+          <button class="tb" onclick="swTab('ft')">&#128197; Fee Terms</button>
+          <button class="tb" onclick="swTab('fp')">&#128176; Fee Payments</button>
+          <button class="tb" onclick="swTab('ar')">&#128202; Attendance Report</button>
+          <button class="tb" onclick="swTab('nl')">&#128241; Notifications</button>
+          <button class="tb" onclick="swTab('at')">&#128197; Acad. Terms</button>
+          <button class="tb" onclick="swTab('cl')">&#127979; Classes</button>
+          <button class="tb" onclick="swTab('gb')">&#128221; Gradebook</button>
+          <button class="tb" onclick="swTab('rc')">&#128203; Report Cards</button>
+          <button class="tb" onclick="swTab('bs')">&#128241; Bulk SMS</button>
+          <button class="tb" onclick="swTab('pu')">&#128118; Pickups</button>
+          <button class="tb" onclick="swTab('ts')">&#128104;&#8205;&#127979; Teachers</button>
+        </div>
+
+        <!-- MEMBERS -->
+        <div class="tp on" id="tp-mb">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Register New Member</h3>
+              <div class="photo-zone" id="mb-photo-zone" onclick="document.getElementById('mb-photo-file').click()">
+                <img id="mb-photo-preview" src="" alt="" style="display:none;">
+                <div id="mb-photo-hint"><div style="font-size:1.5rem;">&#128247;</div>
+                  <div style="font-size:.75rem;color:var(--g);margin-top:3px;">Tap to take/upload photo</div></div>
+              </div>
+              <input type="file" id="mb-photo-file" accept="image/*" capture="user" style="display:none;">
+              <div class="fg"><label>Full Name *</label><input type="text" id="mb-name"></div>
+              <div class="fg"><label>Member Code (ID card / QR value) *</label>
+                <input type="text" id="mb-code" placeholder="e.g. STU-001 or 2026001"></div>
+              <div class="fg"><label>Class / Department</label>
+                <input type="text" id="mb-dept" placeholder="e.g. JHS 2A or Finance"></div>
+              <div class="fg"><label>Guardian / Emergency Contact Name</label>
+                <input type="text" id="mb-gname"></div>
+              <div class="fg"><label>Guardian / Emergency Phone *</label>
+                <input type="tel" id="mb-gphone" placeholder="e.g. 0241234567"></div>
+              <div style="display:flex;gap:10px;margin-bottom:10px;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer;">
+                  <input type="checkbox" id="mb-nentry" checked> Notify on Entry</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer;">
+                  <input type="checkbox" id="mb-nexit"> Notify on Exit</label>
+              </div>
+              <button class="btn bf ba" onclick="saveMember()">Register Member</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Registered Members</h3>
+              <input type="text" placeholder="Filter by name..." id="mb-filter"
+                oninput="filterMembers(this.value)"
+                style="width:100%;padding:7px 9px;border:1px solid var(--b);border-radius:4px;font-size:.81rem;margin-bottom:8px;">
+              <div id="mblist"><div class="es">Loading...</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FEE TERMS -->
+        <div class="tp" id="tp-ft">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Fee Term</h3>
+              <div class="fg"><label>Term Name *</label>
+                <input type="text" id="ft-name" placeholder="e.g. Term 1 — 2026"></div>
+              <div class="fg"><label>Amount (GH&#8373;) *</label>
+                <input type="number" step="0.01" id="ft-amt"></div>
+              <div class="fg"><label>Start Date *</label><input type="date" id="ft-start"></div>
+              <div class="fg"><label>End Date *</label><input type="date" id="ft-end"></div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+                <input type="checkbox" id="ft-active" checked>
+                <label style="font-size:.8rem;cursor:pointer;">Mark as current active term</label>
+              </div>
+              <button class="btn bf" onclick="saveFeeTerm()">Save Fee Term</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Fee Terms</h3>
+              <div id="ftlist"><div class="es">Loading...</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FEE PAYMENTS -->
+        <div class="tp" id="tp-fp">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Record Fee Payment</h3>
+              <div class="fg"><label>Search Member</label>
+                <div class="sdrop">
+                  <input type="text" id="fp-msch" placeholder="Type member name..."
+                    autocomplete="off" oninput="filterMemberSearch(this.value)">
+                  <div class="sdlist" id="fp-mdlist"></div>
+                </div>
+                <div id="fp-msel" class="hint" style="margin-top:4px;"></div>
+              </div>
+              <div class="fg"><label>Fee Term</label>
+                <select id="fp-term"><option value="">-- Select Term --</option></select></div>
+              <div class="fg"><label>Amount Paid (GH&#8373;)</label>
+                <input type="number" step="0.01" id="fp-amt"></div>
+              <div class="fg"><label>Payment Method</label>
+                <select id="fp-pm">
+                  <option>Cash</option><option>Mobile Money</option>
+                  <option>Bank Transfer</option><option>Cheque</option>
+                </select></div>
+              <div class="fg"><label>Receipt Ref (optional)</label>
+                <input type="text" id="fp-ref" placeholder="e.g. RCP-001"></div>
+              <button class="btn bf bg2" onclick="recordFeePayment()">Record Payment</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Recent Payments</h3>
+              <button class="btn bsm" onclick="loadPaymentHistory()">Refresh</button>
+              <div id="fplist" style="margin-top:8px;"><div class="es">Click Refresh to load.</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ATTENDANCE REPORT -->
+        <div class="tp" id="tp-ar">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+            <div class="fg" style="margin:0;flex:1;"><label>Start Date</label>
+              <input type="date" id="ar-s"></div>
+            <div class="fg" style="margin:0;flex:1;"><label>End Date</label>
+              <input type="date" id="ar-e"></div>
+            <div class="fg" style="margin:0;flex:1;"><label>Status</label>
+              <select id="ar-st">
+                <option value="">All</option>
+                <option value="allowed">Allowed</option>
+                <option value="denied">Denied</option>
+              </select></div>
+            <button class="btn" onclick="loadAttReport()">Generate</button>
+            <button id="ar-pb" class="btn ba" style="display:none;" onclick="window.print()">Print</button>
+          </div>
+          <div id="arout"><div class="es">Select dates and click Generate.</div></div>
+        </div>
+
+        <!-- NOTIFICATION HISTORY -->
+        <div class="tp" id="tp-nl">
+          <button class="btn bsm" onclick="loadNotifHistory()">Refresh</button>
+          <div id="nlout" style="margin-top:10px;"><div class="es">Click Refresh to load.</div></div>
+        </div>
+
+        <!-- ACADEMIC TERMS -->
+        <div class="tp" id="tp-at">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Academic Term</h3>
+              <div class="fg"><label>Term Name *</label><input type="text" id="at-name" placeholder="e.g. Term 1"></div>
+              <div class="fg"><label>Academic Year *</label><input type="text" id="at-year" placeholder="e.g. 2025/2026"></div>
+              <div class="fg"><label>Start Date *</label><input type="date" id="at-start"></div>
+              <div class="fg"><label>End Date *</label><input type="date" id="at-end"></div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+                <input type="checkbox" id="at-active" checked>
+                <label style="font-size:.8rem;cursor:pointer;">Mark as current active term</label>
+              </div>
+              <button class="btn bf" onclick="saveAcademicTerm()">Save Term</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Academic Terms</h3>
+              <div id="atlist"><div class="es">No terms yet.</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CLASSES & SUBJECTS -->
+        <div class="tp" id="tp-cl">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Create Class</h3>
+              <div class="fg"><label>Class Name *</label><input type="text" id="cl-name" placeholder="e.g. JHS 2A"></div>
+              <div class="fg"><label>Level *</label>
+                <select id="cl-level">
+                  <option value="Nursery">Nursery</option><option value="KG">KG</option>
+                  <option value="Primary">Primary</option><option value="JHS">JHS</option>
+                  <option value="SHS">SHS</option><option value="Other">Other</option>
+                </select></div>
+              <div class="fg"><label>Class Teacher</label><input type="text" id="cl-teacher"></div>
+              <button class="btn bf" onclick="saveClass()">Create Class</button>
+              <hr style="margin:14px 0;border-color:var(--b);">
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Subject to Class</h3>
+              <div class="fg"><label>Select Class *</label>
+                <select id="subj-class" onchange="loadSubjectsForClass(this.value)">
+                  <option value="">-- Select Class --</option>
+                </select></div>
+              <div class="fg"><label>Subject Name *</label><input type="text" id="subj-name" placeholder="e.g. Mathematics"></div>
+              <button class="btn bf ba" onclick="saveSubject()">Add Subject</button>
+              <hr style="margin:14px 0;border-color:var(--b);">
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Enroll Student into Class</h3>
+              <div class="fg"><label>Select Class *</label>
+                <select id="enr-class"><option value="">-- Select Class --</option></select></div>
+              <div class="fg"><label>Select Term (optional)</label>
+                <select id="enr-term"><option value="">-- Select Term --</option></select></div>
+              <div class="fg"><label>Search Student *</label>
+                <div class="sdrop">
+                  <input type="text" id="enr-msch" placeholder="Type student name..."
+                    autocomplete="off" oninput="filterEnrSearch(this.value)">
+                  <div class="sdlist" id="enr-mdlist"></div>
+                </div>
+                <div id="enr-msel" class="hint" style="margin-top:4px;"></div>
+              </div>
+              <button class="btn bf bg2" onclick="enrollStudent()">Enroll Student</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Classes</h3>
+              <div id="cllist"><div class="es">No classes yet.</div></div>
+              <h3 style="font-size:.88rem;margin:14px 0 10px;color:var(--p);">Subjects</h3>
+              <div id="subjlist"><div class="es">Select a class above to see its subjects.</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GRADEBOOK -->
+        <div class="tp" id="tp-gb">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+            <div class="fg" style="margin:0;flex:1;"><label>Term</label>
+              <select id="gb-term"><option value="">-- Select Term --</option></select></div>
+            <div class="fg" style="margin:0;flex:1;"><label>Class</label>
+              <select id="gb-class" onchange="loadSubjectsForGb(this.value)">
+                <option value="">-- Select Class --</option></select></div>
+            <div class="fg" style="margin:0;flex:1;"><label>Subject</label>
+              <select id="gb-subj"><option value="">-- Select Subject --</option></select></div>
+            <button class="btn" onclick="loadGradebook()">Load Scores</button>
+          </div>
+          <div id="gb-content"><div class="es">Select term, class and subject above.</div></div>
+        </div>
+
+        <!-- REPORT CARDS -->
+        <div class="tp" id="tp-rc">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+            <div class="fg" style="margin:0;flex:1;"><label>Term</label>
+              <select id="rc-term"><option value="">-- Select Term --</option></select></div>
+            <div class="fg" style="margin:0;flex:1;"><label>Class</label>
+              <select id="rc-class"><option value="">-- Select Class --</option></select></div>
+            <button class="btn ba" onclick="loadReportSummary()">Generate</button>
+          </div>
+          <div id="rc-content"><div class="es">Select term and class, then click Generate.</div></div>
+        </div>
+
+        <!-- BULK SMS -->
+        <div class="tp" id="tp-bs">
+          <div style="max-width:560px;">
+            <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Send Bulk SMS to Parents</h3>
+            <div class="fg"><label>Filter by Class (optional)</label>
+              <select id="bs-class"><option value="">All Classes</option></select></div>
+            <div class="fg"><label>Message *</label>
+              <textarea id="bs-msg" rows="5" style="width:100%;padding:8px;border:1px solid var(--b);border-radius:4px;font-size:.82rem;resize:vertical;"
+                placeholder="e.g. Dear Parent, Term 1 results are ready. Please visit school to collect report cards."
+                oninput="document.getElementById('bs-count').innerText=this.value.length+' characters'"></textarea>
+              <div id="bs-count" class="hint">0 characters</div>
+            </div>
+            <p class="hint">&#9888; SMS will be sent to all guardians who have a phone number on file.</p>
+            <button class="btn bf bg2" onclick="sendBulkSMS2()">Send to All Parents</button>
+          </div>
+        </div>
+
+        <!-- AUTHORIZED PICKUPS -->
+        <div class="tp" id="tp-pu">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Authorized Pickup Person</h3>
+              <div class="fg"><label>Search Student</label>
+                <div class="sdrop">
+                  <input type="text" id="pu-msch" placeholder="Type student name..."
+                    autocomplete="off" oninput="filterPickupMemberSearch(this.value)">
+                  <div class="sdlist" id="pu-mdlist"></div>
+                </div>
+                <div id="pu-msel" class="hint" style="margin-top:4px;"></div>
+              </div>
+              <div class="photo-zone" id="pu-photo-zone" onclick="document.getElementById('pu-photo-file').click()">
+                <img id="pu-photo-preview" src="" alt="" style="display:none;">
+                <div id="pu-photo-hint"><div style="font-size:1.5rem;">&#128247;</div>
+                  <div style="font-size:.75rem;color:var(--g);margin-top:3px;">Photo of pickup person (for ID verification)</div></div>
+              </div>
+              <input type="file" id="pu-photo-file" accept="image/*" capture="user" style="display:none;">
+              <div class="fg"><label>Full Name *</label><input type="text" id="pu-name" placeholder="e.g. Mary Asante"></div>
+              <div class="fg"><label>Relationship *</label>
+                <select id="pu-rel">
+                  <option value="">-- Select --</option>
+                  <option>Mother</option><option>Father</option><option>Guardian</option>
+                  <option>Uncle</option><option>Aunt</option><option>Grandparent</option>
+                  <option>Elder Sibling</option><option>Other</option>
+                </select></div>
+              <div class="fg"><label>Phone</label><input type="tel" id="pu-phone"></div>
+              <button class="btn bf bg2" onclick="saveAuthorizedPickup()">Save Pickup Person</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Authorized Persons for Selected Student</h3>
+              <div id="pulist"><div class="es">Search and select a student on the left to see their authorized pickup persons.</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TEACHERS -->
+        <div class="tp" id="tp-ts">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Assign Subject to Teacher</h3>
+              <p class="hint">Teachers must already have a login created in Supabase with role = 'teacher'.</p>
+              <div class="fg"><label>Teacher</label>
+                <select id="ts-teacher"><option value="">-- Select Teacher --</option></select></div>
+              <div class="fg"><label>Class</label>
+                <select id="ts-class" onchange="loadSubjectsForTs(this.value)">
+                  <option value="">-- Select Class --</option></select></div>
+              <div class="fg"><label>Subject</label>
+                <select id="ts-subj"><option value="">-- Select Subject --</option></select></div>
+              <button class="btn bf ba" onclick="saveTeacherSubject()">Assign Subject</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Current Assignments</h3>
+              <button class="btn bsm" onclick="loadTeacherAssignmentList()">Refresh</button>
+              <div id="tslist" style="margin-top:8px;"><div class="es">Click Refresh to load.</div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TEACHER SCORES VIEW -->
+    <div id="sv" class="view">
+      <div class="card">
+        <h2>My Scores</h2>
+        <p class="hint">Only your assigned classes and subjects are shown below.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+          <div class="fg" style="margin:0;flex:1;"><label>Term</label>
+            <select id="tc-term"><option value="">-- Select Term --</option></select></div>
+          <div class="fg" style="margin:0;flex:1;"><label>Your Class</label>
+            <select id="tc-class" onchange="loadTeacherSubjectsForClass(this.value)">
+              <option value="">-- Select Class --</option></select></div>
+          <div class="fg" style="margin:0;flex:1;"><label>Subject</label>
+            <select id="tc-subj"><option value="">-- Select Subject --</option></select></div>
+          <button class="btn" onclick="loadTeacherGradebook()">Load</button>
+        </div>
+        <div id="tc-content"><div class="es">Select your term, class and subject above.</div></div>
+      </div>
+    </div>
+
+    <!-- MASTER VIEW -->
+    <div id="mv" class="view">
+      <div class="card" style="margin-bottom:14px;">
+        <h2>Registered Institutions</h2>
+        <div id="instlist"><div class="es">Loading...</div></div>
+      </div>
+      <div class="card">
+        <h2>Attendance Overview — Any Institution</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+          <div class="fg" style="margin:0;flex:1.5;"><label>Institution</label>
+            <select id="mo-inst"><option value="">-- Select --</option></select></div>
+          <div class="fg" style="margin:0;flex:1;"><label>Start Date</label>
+            <input type="date" id="mo-s"></div>
+          <div class="fg" style="margin:0;flex:1;"><label>End Date</label>
+            <input type="date" id="mo-e"></div>
+          <button class="btn" onclick="masterReport()">View</button>
+        </div>
+        <div id="moout"><div class="es">Select an institution and date range.</div></div>
+      </div>
+    </div>
+
+  </main>
+  <footer>
+    <span id="fbiz">—</span> &bull; Powered by <strong>NYANSATEK</strong>
+  </footer>
+</div>
+
+<script>
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+const E=s=>!s?'':String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const GH=n=>'GH\u20B5'+(n||0).toFixed(2);
+const td=()=>new Date().toISOString().split('T')[0];
+const fmt=dt=>new Date(dt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+let sess=null,prof=null,institution=null,members=[],feeTerms=[],instList=[];
+let scanMode='entry',scanTimer=null,selMemberId=null,selFeeTermId=null;
+let academicTerms=[],classes=[],subjects=[],gbTermId=null,gbClassId=null,gbSubjectId=null,rcTermId=null,rcClassId=null,enrSelMemberId=null;
+
+const L=on=>document.getElementById('lov').classList.toggle('on',on);
+function scr(n){
+  document.getElementById('ls').style.display=n==='l'?'flex':'none';
+  document.getElementById('fps').style.display=n==='f'?'flex':'none';
+  document.getElementById('app').style.display=n==='a'?'flex':'none';
+}
+
+// ── CLOCK ─────────────────────────────────────────────────────
+function startClock(){
+  const tick=()=>{
+    const now=new Date();
+    const el=document.getElementById('gtime');
+    const de=document.getElementById('gdate');
+    if(el)el.innerText=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    if(de)de.innerText=now.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  };
+  tick();setInterval(tick,1000);
+}
+
+// ── AUTH ──────────────────────────────────────────────────────
+document.getElementById('lf').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const eb=document.getElementById('le');eb.classList.remove('on');
+  const biz=document.getElementById('lb').value.trim(),pw=document.getElementById('lp').value;
+  const btn=document.getElementById('lbtn');btn.disabled=true;btn.innerText='Signing in...';
+  try{
+    const{data:row,error:le}=await sb.from('inst_login_lookup').select('login_email')
+      .ilike('institution_name',biz).maybeSingle();
+    if(le||!row)throw new Error('Institution name or password is incorrect.');
+    const{error:ae}=await sb.auth.signInWithPassword({email:row.login_email,password:pw});
+    if(ae)throw new Error('Institution name or password is incorrect.');
+    await boot2();
+  }catch(err){eb.innerText=err.message;eb.classList.add('on');}
+  finally{btn.disabled=false;btn.innerText='Sign In';}
+});
+
+document.getElementById('fpf').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const eb=document.getElementById('fpe');eb.classList.remove('on');
+  const np=document.getElementById('np').value,cp=document.getElementById('cp2').value;
+  if(np!==cp){eb.innerText='Passwords do not match.';eb.classList.add('on');return;}
+  L(true);
+  const{error}=await sb.auth.updateUser({password:np});
+  if(error){L(false);eb.innerText=error.message;eb.classList.add('on');return;}
+  await sb.from('inst_profiles').update({must_change_password:false}).eq('id',sess.user.id);
+  L(false);await boot2();
+});
+
+async function handleLogout(){
+  await sb.auth.signOut();sess=null;prof=null;institution=null;scr('l');
+}
+
+async function boot2(){
+  L(true);
+  const{data:{session:s}}=await sb.auth.getSession();sess=s;
+  if(!sess){L(false);scr('l');return;}
+  const{data:p}=await sb.from('inst_profiles').select('*').eq('id',sess.user.id).single();
+  if(!p){L(false);scr('l');return;}
+  prof=p;
+  if(prof.must_change_password){L(false);scr('f');return;}
+  if(prof.role==='master')await initMaster();else await initInstitution();
+  L(false);scr('a');
+}
+
+// ── NAV ───────────────────────────────────────────────────────
+function swV(v){
+  document.querySelectorAll('.view').forEach(el=>{el.style.display='none';el.classList.remove('on');});
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));
+  const el=document.getElementById(v);
+  if(el){el.style.display=v==='gv'?'flex':'block';el.classList.add('on');}
+  const b=document.getElementById('t-'+v);if(b)b.classList.add('on');
+  if(v==='gv')setTimeout(()=>document.getElementById('scan-input')?.focus(),100);
+}
+
+function buildNav(role){
+  const nav=document.getElementById('nav');nav.innerHTML='';
+  const tabs=role==='master'
+    ?[['mv','Overview']]
+    :role==='admin'
+    ?[['gv','Gate'],['av','Admin']]
+    :role==='teacher'
+    ?[['gv','Gate'],['sv','My Scores']]
+    :[['gv','Gate']];
+  tabs.forEach(([k,l],i)=>{
+    const b=document.createElement('button');b.id='t-'+k;b.innerText=l;
+    if(i===0)b.classList.add('on');b.onclick=()=>swV(k);nav.appendChild(b);
+  });
+  const lo=document.createElement('button');lo.innerText='Log Out';lo.className='lo';lo.onclick=handleLogout;nav.appendChild(lo);
+}
+
+// ── INSTITUTION INIT ──────────────────────────────────────────
+async function initInstitution(){
+  buildNav(prof.role);
+  const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+  institution=inst;
+  document.getElementById('hbiz').innerText=inst?.name||'Institution';
+  document.getElementById('fbiz').innerText=inst?.name||'Institution';
+  document.getElementById('gate-inst-name').innerText=inst?.name||'—';
+  document.getElementById('gate-inst-type').innerText=inst?.type?.toUpperCase()||'—';
+  if(prof.role==='teacher')await initTeacherScores();
+  swV('gv');startClock();
+  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();
+  setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
+  document.getElementById('scan-input').focus();
+}
+
+function setDef(...ids){const t=td();ids.forEach(id=>{const el=document.getElementById(id);if(el&&!el.value)el.value=t;});}
+
+// ── GATE LOGIC ────────────────────────────────────────────────
+function setMode(m){
+  scanMode=m;
+  ['entry','exit','pickup'].forEach(x=>{
+    const b=document.getElementById('mode-'+x);
+    if(b){b.classList.toggle('on',x===m);
+      b.style.background=x===m?(x==='pickup'?'#7c3aed':x==='exit'?'#d4af37':'#d4af37'):'none';
+      b.style.color=x===m?'#fff':'var(--g)';}
+  });
+  document.getElementById('scan-input').focus();
+}
+
+document.getElementById('scan-input').addEventListener('keypress',async e=>{
+  if(e.key==='Enter'){
+    const code=e.target.value.trim();
+    if(code){e.target.value='';await processScan(code);}
+  }
+});
+
+// Also handle scanners that fire without Enter (fast input detection)
+let scanBuffer='',scanBufTimer=null;
+document.getElementById('scan-input').addEventListener('input',e=>{
+  scanBuffer=e.target.value;
+  clearTimeout(scanBufTimer);
+  scanBufTimer=setTimeout(async()=>{
+    if(scanBuffer.length>=3){
+      const code=scanBuffer.trim();
+      document.getElementById('scan-input').value='';
+      scanBuffer='';
+      await processScan(code);
+    }
+  },150);
+});
+
+async function processScan(code){
+  // Find member by member_code
+  const member=members.find(m=>m.member_code.toLowerCase()===code.toLowerCase());
+  if(!member){
+    showResult({allowed:false,member:null,code,reason:'ID not found in system',balance:null,phone:null});
+    return;
+  }
+
+  // PICKUP MODE — show authorized persons, no entry/exit logging
+  if(scanMode==='pickup'){
+    await handlePickupMode(member);
+    return;
+  }
+
+  let allowed=true, reason='', feeBalance=null, feeDisplay='';
+
+  // For schools: check fee status
+  if(institution?.type==='school' && scanMode==='entry'){
+    const feeCheck=await checkFeeStatus(member.id);
+    feeBalance=feeCheck.balance;
+    if(feeCheck.status==='outstanding'){
+      allowed=false;
+      reason='Outstanding fees: '+GH(feeBalance);
+      feeDisplay=feeCheck.status;
+    }else if(feeCheck.status==='no_term'){
+      allowed=true;
+      feeDisplay='No active term';
+    }else{
+      feeDisplay='Fully Paid';
+    }
+  }
+
+  // Log the event
+  const{data:log}=await sb.from('attendance_logs').insert({
+    institution_id:prof.institution_id,
+    member_id:member.id,
+    event_type:scanMode,
+    status:allowed?'allowed':'denied',
+    deny_reason:reason||null,
+    fee_balance:feeBalance,
+    guardian_phone:member.guardian_phone||null,
+    notification_sent:false
+  }).select().single();
+
+  // Send notification
+  let notified='None';
+  const shouldNotify=(allowed&&member.notify_entry&&scanMode==='entry')||
+                     (allowed&&member.notify_exit&&scanMode==='exit')||
+                     (!allowed);
+  if(shouldNotify&&member.guardian_phone){
+    const msg=buildNotifMsg(member,allowed,feeBalance,feeDisplay);
+    await sendSMS(member.guardian_phone,msg);
+    if(log)await sb.from('attendance_logs').update({notification_sent:true}).eq('id',log.id);
+    await sb.from('notification_logs').insert({
+      institution_id:prof.institution_id,
+      attendance_log_id:log?.id||null,
+      recipient_phone:member.guardian_phone,
+      message:msg
+    });
+    notified=member.guardian_phone;
+  }
+
+  showResult({
+    allowed,member,code,reason,
+    balance:feeBalance,
+    feeDisplay,
+    phone:notified
+  });
+
+  // Update last scan bar
+  const ls=document.getElementById('last-scan');
+  const ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  ls.innerText=`Last: ${member.full_name} — ${ts} — ${allowed?'ALLOWED':'DENIED'}`;
+}
+
+async function checkFeeStatus(memberId){
+  const today=td();
+  const{data:terms}=await sb.from('fee_terms').select('*')
+    .eq('institution_id',prof.institution_id).eq('is_active',true)
+    .lte('start_date',today).gte('end_date',today).limit(1);
+  if(!terms||!terms.length)return{status:'no_term',balance:0};
+  const term=terms[0];
+  const{data:pays}=await sb.from('fee_payments').select('amount_paid')
+    .eq('member_id',memberId).eq('fee_term_id',term.id);
+  const paid=(pays||[]).reduce((s,p)=>s+p.amount_paid,0);
+  const balance=term.amount-paid;
+  return{status:balance<=0?'paid':'outstanding',balance:Math.max(0,balance),term:term.term_name};
+}
+
+function buildNotifMsg(member,allowed,balance,feeDisplay){
+  const inst=institution?.name||'Institution';
+  const time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const date=new Date().toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
+  if(!allowed){
+    return `URGENT - ${inst}: ${member.full_name} was DENIED entry at ${time} on ${date} due to outstanding fees of ${GH(balance||0)}. Please report to the school office immediately. - NYANSATEK`;
+  }
+  if(scanMode==='exit'){
+    return `${inst}: ${member.full_name} left the premises at ${time} on ${date}. - NYANSATEK`;
+  }
+  return `${inst}: ${member.full_name} arrived safely at ${time} on ${date}. - NYANSATEK`;
+}
+
+function showResult(r){
+  const overlay=document.getElementById('result-overlay');
+  const banner=document.getElementById('rc-banner');
+  banner.className='rc-banner '+(r.allowed?'allowed':'denied');
+  document.getElementById('rc-icon').innerText=r.allowed?'✅':'❌';
+  document.getElementById('rc-status').innerText=r.allowed
+    ?(scanMode==='entry'?'ENTRY ALLOWED':'EXIT RECORDED')
+    :'ENTRY DENIED';
+
+  // Photo or initials
+  const pw=document.getElementById('rc-photo-wrap');
+  if(r.member?.photo_url){
+    pw.innerHTML=`<img class="rc-photo" src="${E(r.member.photo_url)}" alt="">`;
+  }else if(r.member){
+    const initials=r.member.full_name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    const col=r.allowed?'#10b981':'#ef4444';
+    pw.innerHTML=`<div class="rc-initials" style="background:${col};">${initials}</div>`;
+  }else{
+    pw.innerHTML=`<div class="rc-initials" style="background:#94a3b8;">?</div>`;
+  }
+
+  document.getElementById('rc-name').innerText=r.member?.full_name||'Unknown ID: '+r.code;
+  document.getElementById('rc-dept').innerText=r.member?.class_or_dept||'—';
+  document.getElementById('rc-event').innerText=scanMode==='entry'?'Entry':'Exit';
+  document.getElementById('rc-time').innerText=new Date().toLocaleTimeString();
+
+  const frow=document.getElementById('rc-fee-row');
+  const brow=document.getElementById('rc-bal-row');
+  if(institution?.type==='school'&&scanMode==='entry'){
+    frow.style.display='flex';
+    document.getElementById('rc-fee').innerText=r.feeDisplay||'—';
+    if(!r.allowed&&r.balance>0){
+      brow.style.display='flex';
+      document.getElementById('rc-bal').innerText=GH(r.balance);
+    }else{brow.style.display='none';}
+  }else{frow.style.display='none';brow.style.display='none';}
+
+  document.getElementById('rc-notif').innerText=r.phone&&r.phone!=='None'?'Sent to '+r.phone:'Not sent';
+
+  overlay.classList.add('on');
+
+  // Countdown reset
+  let count=5;
+  document.getElementById('rc-count').innerText=count;
+  clearInterval(scanTimer);
+  scanTimer=setInterval(()=>{
+    count--;
+    document.getElementById('rc-count').innerText=count;
+    if(count<=0){
+      clearInterval(scanTimer);
+      overlay.classList.remove('on');
+      document.getElementById('scan-input').focus();
+    }
+  },1000);
+}
+
+// ── SMS ───────────────────────────────────────────────────────
+async function sendSMS(phone,message){
+  if(!SMS_API_KEY)return;
+  try{
+    await fetch('https://sms.arkesel.com/sms/api?action=send-sms'
+      +'&api_key='+encodeURIComponent(SMS_API_KEY)
+      +'&to='+encodeURIComponent(phone)
+      +'&from='+encodeURIComponent(SMS_SENDER_ID)
+      +'&sms='+encodeURIComponent(message));
+  }catch(e){console.error('SMS error:',e);}
+}
+
+// ── MEMBERS ───────────────────────────────────────────────────
+async function loadMembers(){
+  const{data}=await sb.from('members').select('*')
+    .eq('institution_id',prof.institution_id).order('full_name');
+  members=data||[];
+  renderMemberList(members);
+  // Populate payment search
+  const sel=document.getElementById('fp-term');
+  if(feeTerms.length){
+    sel.innerHTML='<option value="">-- Select Term --</option>';
+    feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name;sel.appendChild(o);});
+  }
+}
+
+function renderMemberList(list){
+  const c=document.getElementById('mblist');
+  if(!list.length){c.innerHTML='<div class="es">No members registered yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Photo</th><th>Name</th><th>Code</th><th>Class/Dept</th><th>Guardian</th><th>Status</th><th></th></tr></thead>
+  <tbody>${list.map(m=>`<tr>
+    <td>${m.photo_url?`<img src="${m.photo_url}" class="thumb" alt="">`:'<span style="font-size:1.2rem;">👤</span>'}</td>
+    <td><strong>${E(m.full_name)}</strong></td>
+    <td style="font-family:monospace;font-size:.75rem;">${E(m.member_code)}</td>
+    <td>${E(m.class_or_dept||'—')}</td>
+    <td>${E(m.guardian_phone||'—')}</td>
+    <td><span class="badge ${m.is_active?'bg':'br'}">${m.is_active?'Active':'Inactive'}</span></td>
+    <td><button class="btn bsm ba" onclick='printMemberID(${JSON.stringify(m)})'>&#127760; ID</button></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+function filterMembers(val){
+  if(!val.trim()){renderMemberList(members);return;}
+  renderMemberList(members.filter(m=>m.full_name.toLowerCase().includes(val.toLowerCase())||
+    m.member_code.toLowerCase().includes(val.toLowerCase())));
+}
+
+async function saveMember(){
+  const name=document.getElementById('mb-name').value.trim();
+  const code=document.getElementById('mb-code').value.trim();
+  const dept=document.getElementById('mb-dept').value.trim();
+  const gname=document.getElementById('mb-gname').value.trim();
+  const gphone=document.getElementById('mb-gphone').value.trim();
+  const ne=document.getElementById('mb-nentry').checked;
+  const nx=document.getElementById('mb-nexit').checked;
+  if(!name||!code){alert('Full name and Member Code are required.');return;}
+  L(true);
+  const{error}=await sb.from('members').insert({
+    institution_id:prof.institution_id,
+    member_code:code,full_name:name,class_or_dept:dept||null,
+    guardian_name:gname||null,guardian_phone:gphone||null,
+    notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null
+  });
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  ['mb-name','mb-code','mb-dept','mb-gname','mb-gphone'].forEach(id=>document.getElementById(id).value='');
+  await loadMembers();alert('Member registered!');
+}
+
+function filterMemberSearch(val){
+  const list=document.getElementById('fp-mdlist');
+  if(!val.trim()){list.classList.remove('on');return;}
+  const ms=members.filter(m=>m.full_name.toLowerCase().includes(val.toLowerCase()));
+  list.innerHTML='';
+  ms.slice(0,8).forEach(m=>{
+    const d=document.createElement('div');d.className='sdi';
+    d.innerText=`${m.full_name} (${m.member_code})`;
+    d.onclick=()=>{
+      selMemberId=m.id;
+      document.getElementById('fp-msch').value=m.full_name;
+      document.getElementById('fp-msel').innerText='Selected: '+m.full_name;
+      list.classList.remove('on');
+    };
+    list.appendChild(d);
+  });
+  list.classList.toggle('on',ms.length>0);
+}
+
+// ── FEE TERMS ─────────────────────────────────────────────────
+async function loadFeeTerms(){
+  const{data}=await sb.from('fee_terms').select('*')
+    .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
+  feeTerms=data||[];
+  renderFeeTermList();
+  const sel=document.getElementById('fp-term');
+  sel.innerHTML='<option value="">-- Select Term --</option>';
+  feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name;sel.appendChild(o);});
+}
+
+function renderFeeTermList(){
+  const c=document.getElementById('ftlist');
+  if(!feeTerms.length){c.innerHTML='<div class="es">No fee terms yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Term</th><th>Amount</th><th>Period</th><th>Status</th></tr></thead>
+  <tbody>${feeTerms.map(t=>`<tr>
+    <td><strong>${E(t.term_name)}</strong></td>
+    <td>${GH(t.amount)}</td>
+    <td style="font-size:.75rem;">${t.start_date} to ${t.end_date}</td>
+    <td><span class="badge ${t.is_active?'bg':'by'}">${t.is_active?'Active':'Inactive'}</span></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function saveFeeTerm(){
+  const name=document.getElementById('ft-name').value.trim();
+  const amt=parseFloat(document.getElementById('ft-amt').value)||0;
+  const start=document.getElementById('ft-start').value;
+  const end=document.getElementById('ft-end').value;
+  const active=document.getElementById('ft-active').checked;
+  if(!name||amt<=0||!start||!end){alert('All fields are required.');return;}
+  L(true);
+  if(active){
+    await sb.from('fee_terms').update({is_active:false}).eq('institution_id',prof.institution_id);
+  }
+  const{error}=await sb.from('fee_terms').insert({
+    institution_id:prof.institution_id,term_name:name,amount:amt,
+    start_date:start,end_date:end,is_active:active
+  });
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  ['ft-name','ft-amt'].forEach(id=>document.getElementById(id).value='');
+  await loadFeeTerms();alert('Fee term saved!');
+}
+
+// ── FEE PAYMENTS ──────────────────────────────────────────────
+async function recordFeePayment(){
+  if(!selMemberId){alert('Please search and select a member first.');return;}
+  const termId=document.getElementById('fp-term').value;
+  const amt=parseFloat(document.getElementById('fp-amt').value)||0;
+  const pm=document.getElementById('fp-pm').value;
+  const ref=document.getElementById('fp-ref').value.trim();
+  if(!termId||amt<=0){alert('Select a fee term and enter an amount.');return;}
+  L(true);
+  const{error}=await sb.from('fee_payments').insert({
+    institution_id:prof.institution_id,member_id:selMemberId,
+    fee_term_id:termId,amount_paid:amt,payment_method:pm,
+    receipt_ref:ref||null,recorded_by:prof.id
+  });
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  selMemberId=null;
+  document.getElementById('fp-msch').value='';document.getElementById('fp-msel').innerText='';
+  document.getElementById('fp-amt').value='';document.getElementById('fp-ref').value='';
+  await loadPaymentHistory();alert('Payment recorded!');
+}
+
+async function loadPaymentHistory(){
+  L(true);
+  const{data}=await sb.from('fee_payments')
+    .select('*,members(full_name,member_code),fee_terms(term_name)')
+    .eq('institution_id',prof.institution_id)
+    .order('created_at',{ascending:false}).limit(30);
+  L(false);
+  const c=document.getElementById('fplist');
+  if(!data||!data.length){c.innerHTML='<div class="es">No payments recorded yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Date</th><th>Member</th><th>Term</th><th>Amount</th><th>Method</th><th>Ref</th></tr></thead>
+  <tbody>${data.map(p=>`<tr>
+    <td style="font-size:.75rem;">${p.payment_date}</td>
+    <td>${E(p.members?.full_name||'—')}<br><span style="font-size:.7rem;color:var(--g);">${E(p.members?.member_code||'')}</span></td>
+    <td style="font-size:.75rem;">${E(p.fee_terms?.term_name||'—')}</td>
+    <td style="font-weight:600;color:var(--s);">${GH(p.amount_paid)}</td>
+    <td>${E(p.payment_method)}</td>
+    <td style="font-size:.75rem;">${E(p.receipt_ref||'—')}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+// ── ATTENDANCE REPORT ─────────────────────────────────────────
+async function loadAttReport(){
+  const s=document.getElementById('ar-s').value,e=document.getElementById('ar-e').value;
+  const st=document.getElementById('ar-st').value;
+  if(!s||!e){alert('Select both dates.');return;}
+  L(true);
+  let q=sb.from('attendance_logs')
+    .select('*,members(full_name,class_or_dept,member_code)')
+    .eq('institution_id',prof.institution_id)
+    .gte('scanned_at',s+'T00:00:00').lte('scanned_at',e+'T23:59:59')
+    .order('scanned_at',{ascending:false});
+  if(st)q=q.eq('status',st);
+  const{data}=await q;L(false);
+  const c=document.getElementById('arout');const pb=document.getElementById('ar-pb');
+  if(!data||!data.length){c.innerHTML='<div class="es">No records for this period.</div>';pb.style.display='none';return;}
+  const total=data.length,allowed=data.filter(r=>r.status==='allowed').length,denied=data.filter(r=>r.status==='denied').length;
+  c.innerHTML=`
+  <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+    <div style="background:#fff;border:1px solid var(--b);border-radius:6px;padding:12px;flex:1;text-align:center;">
+      <p style="font-size:.7rem;color:var(--g);margin-bottom:3px;">TOTAL SCANS</p>
+      <h3 style="font-size:1.3rem;">${total}</h3>
+    </div>
+    <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:6px;padding:12px;flex:1;text-align:center;">
+      <p style="font-size:.7rem;color:#065f46;margin-bottom:3px;">ALLOWED</p>
+      <h3 style="font-size:1.3rem;color:#065f46;">${allowed}</h3>
+    </div>
+    <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:12px;flex:1;text-align:center;">
+      <p style="font-size:.7rem;color:#991b1b;margin-bottom:3px;">DENIED</p>
+      <h3 style="font-size:1.3rem;color:#991b1b;">${denied}</h3>
+    </div>
+  </div>
+  <table><thead><tr><th>Date &amp; Time</th><th>Member</th><th>Class/Dept</th><th>Event</th><th>Status</th><th>Notes</th></tr></thead>
+  <tbody>${data.map(r=>`<tr>
+    <td style="font-size:.75rem;font-family:monospace;">${new Date(r.scanned_at).toLocaleString()}</td>
+    <td><strong>${E(r.members?.full_name||'—')}</strong><br><span style="font-size:.7rem;color:var(--g);">${E(r.members?.member_code||'')}</span></td>
+    <td>${E(r.members?.class_or_dept||'—')}</td>
+    <td><span class="badge" style="background:#ede9fe;color:#5b21b6;">${r.event_type}</span></td>
+    <td><span class="badge ${r.status==='allowed'?'bg':'br'}">${r.status}</span></td>
+    <td style="font-size:.75rem;color:var(--g);">${E(r.deny_reason||'—')}</td>
+  </tr>`).join('')}</tbody></table>`;
+  pb.style.display='inline-block';
+}
+
+// ── NOTIFICATION HISTORY ──────────────────────────────────────
+async function loadNotifHistory(){
+  L(true);
+  const{data}=await sb.from('notification_logs').select('*')
+    .eq('institution_id',prof.institution_id)
+    .order('created_at',{ascending:false}).limit(50);
+  L(false);
+  const c=document.getElementById('nlout');
+  if(!data||!data.length){c.innerHTML='<div class="es">No notifications sent yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Date &amp; Time</th><th>Sent To</th><th>Message</th></tr></thead>
+  <tbody>${data.map(r=>`<tr>
+    <td style="font-size:.75rem;font-family:monospace;">${new Date(r.created_at).toLocaleString()}</td>
+    <td style="font-weight:600;">${E(r.recipient_phone)}</td>
+    <td style="font-size:.75rem;color:var(--g);">${E(r.message)}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+// ── ADMIN TABS ────────────────────────────────────────────────
+function swTab(tab){
+  ['mb','ft','fp','ar','nl','at','cl','gb','rc','bs','pu','ts'].forEach(t=>{
+    const p=document.getElementById('tp-'+t);if(p)p.classList.toggle('on',t===tab);
+  });
+  document.getElementById('atbar').querySelectorAll('.tb')
+    .forEach((b,i)=>b.classList.toggle('on',['mb','ft','fp','ar','nl','at','cl','gb','rc','bs','pu','ts'][i]===tab));
+  if(tab==='ft')loadFeeTerms();
+  if(tab==='fp')loadPaymentHistory();
+  if(tab==='nl')loadNotifHistory();
+  if(tab==='at'){loadAcademicTerms();}
+  if(tab==='cl'){loadClasses();}
+  if(tab==='pu'){loadTeacherList();}
+  if(tab==='ts'){loadTeacherList();populateTsClassSel();loadTeacherAssignmentList();}
+}
+
+// ── MASTER ────────────────────────────────────────────────────
+async function initMaster(){
+  buildNav('master');
+  document.getElementById('hbiz').innerText='NYANSATEK — Master Console';
+  document.getElementById('fbiz').innerText='NYANSATEK';
+  swV('mv');
+  L(true);
+  const{data}=await sb.from('institutions').select('*').order('name');
+  L(false);
+  instList=data||[];
+  renderInstList();
+  const sel=document.getElementById('mo-inst');
+  sel.innerHTML='<option value="">-- Select --</option>';
+  instList.forEach(i=>{const o=document.createElement('option');o.value=i.id;o.text=i.name;sel.appendChild(o);});
+  setDef('mo-s','mo-e');
+}
+
+function renderInstList(){
+  const c=document.getElementById('instlist');
+  if(!instList.length){c.innerHTML='<div class="es">No institutions registered yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Status</th><th>Since</th></tr></thead>
+  <tbody>${instList.map(i=>`<tr>
+    <td><strong>${E(i.name)}</strong></td>
+    <td><span class="badge" style="background:#ede9fe;color:#5b21b6;">${E(i.type)}</span></td>
+    <td>${E(i.contact_phone||'—')}</td>
+    <td><span class="badge ${i.is_active?'bg':'br'}">${i.is_active?'Active':'Inactive'}</span></td>
+    <td>${new Date(i.created_at).toLocaleDateString()}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function masterReport(){
+  const instId=document.getElementById('mo-inst').value;
+  const s=document.getElementById('mo-s').value,e=document.getElementById('mo-e').value;
+  if(!instId||!s||!e){alert('Select institution and both dates.');return;}
+  L(true);
+  const{data}=await sb.from('attendance_logs')
+    .select('*,members(full_name,class_or_dept)')
+    .eq('institution_id',instId)
+    .gte('scanned_at',s+'T00:00:00').lte('scanned_at',e+'T23:59:59')
+    .order('scanned_at',{ascending:false});
+  L(false);
+  const c=document.getElementById('moout');
+  if(!data||!data.length){c.innerHTML='<div class="es">No records for this period.</div>';return;}
+  const inst=instList.find(i=>i.id===instId);
+  const allowed=data.filter(r=>r.status==='allowed').length;
+  const denied=data.filter(r=>r.status==='denied').length;
+  c.innerHTML=`<p style="font-weight:600;margin-bottom:8px;">${E(inst?.name||'—')} &bull; ${s} to ${e} &bull; ${data.length} records (${allowed} allowed, ${denied} denied)</p>
+  <table><thead><tr><th>Date &amp; Time</th><th>Member</th><th>Dept</th><th>Event</th><th>Status</th></tr></thead>
+  <tbody>${data.map(r=>`<tr>
+    <td style="font-size:.75rem;">${new Date(r.scanned_at).toLocaleString()}</td>
+    <td>${E(r.members?.full_name||'—')}</td>
+    <td>${E(r.members?.class_or_dept||'—')}</td>
+    <td>${r.event_type}</td>
+    <td><span class="badge ${r.status==='allowed'?'bg':'br'}">${r.status}</span></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+
+// ── SCHOOL MANAGEMENT ─────────────────────────────────────────
+
+function gradeInfo(s){
+  if(s>=80)return{g:'A1',r:'Excellent',c:'#065f46'};
+  if(s>=70)return{g:'B2',r:'Very Good',c:'#1e40af'};
+  if(s>=60)return{g:'B3',r:'Good',c:'#1e40af'};
+  if(s>=55)return{g:'C4',r:'Credit',c:'#92400e'};
+  if(s>=50)return{g:'C5',r:'Credit',c:'#92400e'};
+  if(s>=45)return{g:'C6',r:'Credit',c:'#92400e'};
+  if(s>=40)return{g:'D7',r:'Pass',c:'#c2410c'};
+  if(s>=35)return{g:'E8',r:'Weak Pass',c:'#dc2626'};
+  return{g:'F9',r:'Fail',c:'#991b1b'};
+}
+function ordinal(n){const s=['th','st','nd','rd'];const v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
+
+// ── ACADEMIC TERMS ────────────────────────────────────────────
+async function loadAcademicTerms(){
+  if(!prof?.institution_id)return;
+  const{data}=await sb.from('academic_terms').select('*')
+    .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
+  academicTerms=data||[];
+  renderAcademicTermList();
+  ['gb-term','rc-term','enr-term'].forEach(id=>{
+    const sel=document.getElementById(id);if(!sel)return;
+    sel.innerHTML='<option value="">-- Select Term --</option>';
+    academicTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name+' ('+t.academic_year+')';sel.appendChild(o);});
+  });
+}
+function renderAcademicTermList(){
+  const c=document.getElementById('atlist');if(!c)return;
+  if(!academicTerms.length){c.innerHTML='<div class="es">No terms yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Term</th><th>Year</th><th>Period</th><th>Status</th></tr></thead>
+  <tbody>${academicTerms.map(t=>`<tr>
+    <td><strong>${E(t.term_name)}</strong></td><td>${E(t.academic_year)}</td>
+    <td style="font-size:.73rem;">${t.start_date} to ${t.end_date}</td>
+    <td><span class="badge ${t.is_active?'bg':'by'}">${t.is_active?'Active':'Inactive'}</span></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+async function saveAcademicTerm(){
+  const name=document.getElementById('at-name').value.trim();
+  const year=document.getElementById('at-year').value.trim();
+  const start=document.getElementById('at-start').value;
+  const end=document.getElementById('at-end').value;
+  const active=document.getElementById('at-active').checked;
+  if(!name||!year||!start||!end){alert('All fields are required.');return;}
+  L(true);
+  if(active)await sb.from('academic_terms').update({is_active:false}).eq('institution_id',prof.institution_id);
+  const{error}=await sb.from('academic_terms').insert({institution_id:prof.institution_id,term_name:name,academic_year:year,start_date:start,end_date:end,is_active:active});
+  L(false);if(error){alert('Error: '+error.message);return;}
+  document.getElementById('at-name').value='';document.getElementById('at-year').value='';
+  await loadAcademicTerms();alert('Term saved!');
+}
+
+// ── CLASSES ───────────────────────────────────────────────────
+async function loadClasses(){
+  if(!prof?.institution_id)return;
+  const{data}=await sb.from('school_classes').select('*').eq('institution_id',prof.institution_id).order('class_name');
+  classes=data||[];
+  renderClassList2();
+  ['subj-class','enr-class','gb-class','rc-class','bs-class'].forEach(id=>{
+    const sel=document.getElementById(id);if(!sel)return;
+    const cur=sel.value;
+    sel.innerHTML=id==='bs-class'?'<option value="">All Classes</option>':'<option value="">-- Select Class --</option>';
+    classes.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.text=c.class_name+' ('+c.level+')';sel.appendChild(o);});
+    if(cur)sel.value=cur;
+  });
+}
+function renderClassList2(){
+  const c=document.getElementById('cllist');if(!c)return;
+  if(!classes.length){c.innerHTML='<div class="es">No classes yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Class</th><th>Level</th><th>Teacher</th></tr></thead>
+  <tbody>${classes.map(cl=>`<tr>
+    <td><strong>${E(cl.class_name)}</strong></td>
+    <td><span class="badge" style="background:#ede9fe;color:#5b21b6;">${E(cl.level)}</span></td>
+    <td>${E(cl.class_teacher||'—')}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+async function saveClass(){
+  const name=document.getElementById('cl-name').value.trim();
+  const level=document.getElementById('cl-level').value;
+  const teacher=document.getElementById('cl-teacher').value.trim();
+  if(!name||!level){alert('Class name and level are required.');return;}
+  L(true);
+  const{error}=await sb.from('school_classes').insert({institution_id:prof.institution_id,class_name:name,level,class_teacher:teacher||null});
+  L(false);if(error){alert('Error: '+error.message);return;}
+  document.getElementById('cl-name').value='';document.getElementById('cl-teacher').value='';
+  await loadClasses();alert('Class created!');
+}
+
+// ── SUBJECTS ──────────────────────────────────────────────────
+async function loadSubjectsForClass(classId){
+  const c=document.getElementById('subjlist');
+  if(!classId){if(c)c.innerHTML='<div class="es">Select a class above.</div>';return;}
+  const{data}=await sb.from('subjects').select('*').eq('class_id',classId).order('subject_name');
+  subjects=data||[];
+  if(c){
+    if(!subjects.length){c.innerHTML='<div class="es">No subjects yet for this class.</div>';return;}
+    c.innerHTML=`<table><thead><tr><th>Subject</th></tr></thead>
+    <tbody>${subjects.map(s=>`<tr><td>${E(s.subject_name)}</td></tr>`).join('')}</tbody></table>`;
+  }
+}
+async function loadSubjectsForGb(classId){
+  if(!classId)return;
+  const{data}=await sb.from('subjects').select('*').eq('class_id',classId).order('subject_name');
+  subjects=data||[];
+  const sel=document.getElementById('gb-subj');if(!sel)return;
+  sel.innerHTML='<option value="">-- Select Subject --</option>';
+  subjects.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.text=s.subject_name;sel.appendChild(o);});
+}
+async function saveSubject(){
+  const classId=document.getElementById('subj-class').value;
+  const name=document.getElementById('subj-name').value.trim();
+  if(!classId||!name){alert('Select a class and enter subject name.');return;}
+  L(true);
+  const{error}=await sb.from('subjects').insert({institution_id:prof.institution_id,class_id:classId,subject_name:name});
+  L(false);if(error){alert('Error: '+error.message);return;}
+  document.getElementById('subj-name').value='';
+  loadSubjectsForClass(classId);alert('Subject added!');
+}
+
+// ── ENROLLMENT ────────────────────────────────────────────────
+function filterEnrSearch(val){
+  const list=document.getElementById('enr-mdlist');
+  if(!val.trim()){list.classList.remove('on');return;}
+  const ms=members.filter(m=>m.full_name.toLowerCase().includes(val.toLowerCase()));
+  list.innerHTML='';
+  ms.slice(0,8).forEach(m=>{
+    const d=document.createElement('div');d.className='sdi';
+    d.innerText=m.full_name+' ('+m.member_code+')';
+    d.onclick=()=>{
+      enrSelMemberId=m.id;
+      document.getElementById('enr-msch').value=m.full_name;
+      document.getElementById('enr-msel').innerText='Selected: '+m.full_name;
+      list.classList.remove('on');
+    };
+    list.appendChild(d);
+  });
+  list.classList.toggle('on',ms.length>0);
+}
+async function enrollStudent(){
+  const classId=document.getElementById('enr-class').value;
+  const termId=document.getElementById('enr-term').value;
+  if(!classId||!enrSelMemberId){alert('Select a class and search for a student.');return;}
+  L(true);
+  const{error}=await sb.from('class_enrollments').insert({
+    institution_id:prof.institution_id,class_id:classId,
+    member_id:enrSelMemberId,term_id:termId||null
+  });
+  L(false);
+  if(error){alert('Error: '+error.message+' (Student may already be enrolled in this class/term)');return;}
+  enrSelMemberId=null;
+  document.getElementById('enr-msch').value='';
+  document.getElementById('enr-msel').innerText='';
+  alert('Student enrolled successfully!');
+}
+
+// ── GRADEBOOK ─────────────────────────────────────────────────
+async function loadGradebook(){
+  gbTermId=document.getElementById('gb-term').value;
+  gbClassId=document.getElementById('gb-class').value;
+  gbSubjectId=document.getElementById('gb-subj').value;
+  if(!gbTermId||!gbClassId||!gbSubjectId){alert('Select term, class and subject.');return;}
+  L(true);
+  const[{data:enr},{data:sc}]=await Promise.all([
+    sb.from('class_enrollments').select('*,members(id,full_name,member_code)').eq('class_id',gbClassId),
+    sb.from('scores').select('*').eq('term_id',gbTermId).eq('class_id',gbClassId).eq('subject_id',gbSubjectId)
+  ]);
+  L(false);
+  const students=(enr||[]).map(e=>e.members).filter(Boolean).sort((a,b)=>a.full_name.localeCompare(b.full_name));
+  const scoreMap={};(sc||[]).forEach(s=>scoreMap[s.member_id]=s);
+  renderGradebook(students,scoreMap);
+}
+function renderGradebook(students,scoreMap){
+  const c=document.getElementById('gb-content');
+  if(!students.length){c.innerHTML='<div class="es">No students enrolled in this class. Go to Classes tab to enroll students.</div>';return;}
+  const rows=students.map(s=>{
+    const sc=scoreMap[s.id]||{};
+    const gi=sc.final_score!=null?gradeInfo(sc.final_score):{g:'—',r:'—',c:'var(--g)'};
+    return `<tr>
+      <td>${E(s.full_name)}<br><span style="font-size:.7rem;color:var(--g);">${E(s.member_code)}</span></td>
+      <td><input type="number" min="0" max="100" step="0.5" class="ip" style="width:68px;"
+          data-mid="${s.id}" data-type="cs" value="${sc.class_score!=null?sc.class_score:''}" placeholder="0"
+          oninput="previewScore(this)"></td>
+      <td><input type="number" min="0" max="100" step="0.5" class="ip" style="width:68px;"
+          data-mid="${s.id}" data-type="es" value="${sc.exam_score!=null?sc.exam_score:''}" placeholder="0"
+          oninput="previewScore(this)"></td>
+      <td style="font-weight:600;text-align:center;" class="fs-${s.id}">${sc.final_score!=null?sc.final_score.toFixed(1):'—'}</td>
+      <td style="font-weight:700;text-align:center;color:${gi.c};" class="gd-${s.id}">${gi.g}</td>
+      <td style="color:${gi.c};font-size:.78rem;" class="rm-${s.id}">${gi.r}</td>
+    </tr>`;
+  });
+  c.innerHTML=`<table><thead><tr><th>Student</th><th>Class Score (30%)</th><th>Exam Score (70%)</th>
+    <th style="text-align:center;">Final</th><th style="text-align:center;">Grade</th><th>Remarks</th></tr></thead>
+  <tbody>${rows.join('')}</tbody></table>
+  <button class="btn bf ba" style="margin-top:10px;" onclick="saveAllScores()">&#128190; Save All Scores</button>`;
+}
+function previewScore(inp){
+  const row=inp.closest('tr');
+  const mid=inp.dataset.mid;
+  const cs=parseFloat(row.querySelector('[data-type="cs"]')?.value)||0;
+  const es=parseFloat(row.querySelector('[data-type="es"]')?.value)||0;
+  const fs=Math.round((cs*0.3+es*0.7)*10)/10;
+  const gi=gradeInfo(fs);
+  const fc=document.querySelector('.fs-'+mid);if(fc)fc.innerText=fs.toFixed(1);
+  const gd=document.querySelector('.gd-'+mid);if(gd){gd.innerText=gi.g;gd.style.color=gi.c;}
+  const rm=document.querySelector('.rm-'+mid);if(rm){rm.innerText=gi.r;rm.style.color=gi.c;}
+}
+async function saveAllScores(){
+  const rows=document.querySelectorAll('#gb-content tbody tr');
+  const upserts=[];
+  rows.forEach(row=>{
+    const csIn=row.querySelector('[data-type="cs"]');
+    const esIn=row.querySelector('[data-type="es"]');
+    const mid=csIn?.dataset.mid;if(!mid)return;
+    const cs=parseFloat(csIn.value)||0;
+    const es=parseFloat(esIn.value)||0;
+    upserts.push({institution_id:prof.institution_id,term_id:gbTermId,class_id:gbClassId,
+      subject_id:gbSubjectId,member_id:mid,class_score:cs,exam_score:es,recorded_by:prof.id});
+  });
+  if(!upserts.length)return;
+  L(true);
+  const{error}=await sb.from('scores').upsert(upserts,{onConflict:'term_id,subject_id,member_id'});
+  L(false);if(error){alert('Error saving scores: '+error.message);return;}
+  await loadGradebook();alert('All scores saved successfully!');
+}
+
+// ── REPORT CARDS ──────────────────────────────────────────────
+async function loadReportSummary(){
+  rcTermId=document.getElementById('rc-term').value;
+  rcClassId=document.getElementById('rc-class').value;
+  if(!rcTermId||!rcClassId){alert('Select a term and class.');return;}
+  L(true);
+  const term=academicTerms.find(t=>t.id===rcTermId);
+  const[{data:enr},{data:sc},{data:attData}]=await Promise.all([
+    sb.from('class_enrollments').select('*,members(id,full_name,member_code)').eq('class_id',rcClassId),
+    sb.from('scores').select('*,subjects(subject_name)').eq('term_id',rcTermId).eq('class_id',rcClassId),
+    sb.from('attendance_logs').select('member_id,scanned_at').eq('institution_id',prof.institution_id)
+      .eq('event_type','entry').eq('status','allowed')
+      .gte('scanned_at',(term?.start_date||'2000-01-01')+'T00:00:00')
+      .lte('scanned_at',(term?.end_date||'2099-12-31')+'T23:59:59')
+  ]);
+  L(false);
+  // Build attendance map: member_id -> Set of unique dates present
+  const attMap={};
+  (attData||[]).forEach(r=>{
+    const dt=r.scanned_at.split('T')[0];
+    if(!attMap[r.member_id])attMap[r.member_id]=new Set();
+    attMap[r.member_id].add(dt);
+  });
+  const students=(enr||[]).map(e=>e.members).filter(Boolean);
+  if(!students.length){document.getElementById('rc-content').innerHTML='<div class="es">No students enrolled in this class.</div>';return;}
+  const daysPresent=id=>attMap[id]?.size||0;
+  const studentData=students.map(s=>{
+    const myScores=(sc||[]).filter(x=>x.member_id===s.id);
+    const total=myScores.reduce((sum,x)=>sum+(x.final_score||0),0);
+    const avg=myScores.length?total/myScores.length:0;
+    return{...s,total,avg,subjectCount:myScores.length,scores:myScores,daysPresent:daysPresent(s.id)};
+  }).sort((a,b)=>b.total-a.total);
+  studentData.forEach((s,i)=>s.position=i+1);
+  const cls=classes.find(c=>c.id===rcClassId);
+  const term=academicTerms.find(t=>t.id===rcTermId);
+  const n=studentData.length;
+  document.getElementById('rc-content').innerHTML=`
+  <p class="hint">Ranked by total marks across all subjects. ${n} students — ${cls?.class_name||''} — ${term?.term_name||''}</p>
+  <table><thead><tr><th style="text-align:center;">Pos.</th><th>Student</th><th style="text-align:center;">Subjects</th>
+    <th style="text-align:right;">Total</th><th style="text-align:right;">Average</th><th></th></tr></thead>
+  <tbody>${studentData.map(s=>`<tr>
+    <td style="font-weight:700;text-align:center;font-size:1rem;">${ordinal(s.position)}</td>
+    <td><strong>${E(s.full_name)}</strong><br><span style="font-size:.7rem;color:var(--g);">${E(s.member_code)}</span></td>
+    <td style="text-align:center;">${s.subjectCount}</td>
+    <td style="text-align:right;font-weight:600;">${s.total.toFixed(1)}</td>
+    <td style="text-align:right;">${s.avg.toFixed(1)}%</td>
+    <td><button class="btn bsm ba" onclick='printOneRC(${JSON.stringify({id:s.id,full_name:s.full_name,member_code:s.member_code,position:s.position,total:s.total,avg:s.avg})},${JSON.stringify(s.scores)},${n})'>Print</button></td>
+  </tr>`).join('')}</tbody></table>
+  <button class="btn bf" style="margin-top:10px;" onclick='printAllRC(${JSON.stringify(studentData)},${n})'>Print All Report Cards</button>`;
+}
+function printOneRC(student,scores,n){
+  const cls=classes.find(c=>c.id===rcClassId);
+  const term=academicTerms.find(t=>t.id===rcTermId);
+  printIF(buildRCHtml(student,scores,cls,term,n,false,student.daysPresent||0));
+}
+function printAllRC(students,n){
+  const cls=classes.find(c=>c.id===rcClassId);
+  const term=academicTerms.find(t=>t.id===rcTermId);
+  const pages=students.map(s=>buildRCHtml(s,s.scores,cls,term,n,true,s.daysPresent||0)).join('<div style="page-break-after:always;"></div>');
+  printIF(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:A4;margin:12mm 15mm;}body{margin:0;font-family:Arial,sans-serif;}</style></head><body>${pages}</body></html>`);
+}
+function buildRCHtml(student,scores,cls,term,totalStudents,inner,daysPresent){
+  const school=E(institution?.name||'School');
+  const subjectRows=(scores||[]).map(sc=>{
+    const gi=gradeInfo(sc.final_score||0);
+    return `<tr>
+      <td style="padding:5px 8px;">${E(sc.subjects?.subject_name||'—')}</td>
+      <td style="padding:5px 8px;text-align:center;">${(sc.class_score||0).toFixed(1)}</td>
+      <td style="padding:5px 8px;text-align:center;">${(sc.exam_score||0).toFixed(1)}</td>
+      <td style="padding:5px 8px;text-align:center;font-weight:600;">${(sc.final_score||0).toFixed(1)}</td>
+      <td style="padding:5px 8px;text-align:center;font-weight:700;color:${gi.c};">${gi.g}</td>
+      <td style="padding:5px 8px;text-align:center;color:${gi.c};">${gi.r}</td>
+    </tr>`;
+  }).join('');
+  const body=`<div style="font-family:Arial,sans-serif;font-size:10pt;color:#000;">
+  <div style="text-align:center;border-bottom:3px double #111;padding-bottom:10px;margin-bottom:14px;">
+    <div style="font-size:18pt;font-weight:bold;text-transform:uppercase;letter-spacing:1px;">${school}</div>
+    <div style="font-size:10pt;font-weight:bold;letter-spacing:3px;margin-top:4px;">ACADEMIC REPORT CARD</div>
+    <div style="font-size:9pt;color:#555;margin-top:2px;">${E(term?.term_name||'—')} &bull; ${E(term?.academic_year||'—')}</div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;font-size:9.5pt;">
+    <div><span style="color:#6b7280;">Student Name:</span> <strong>${E(student.full_name)}</strong></div>
+    <div><span style="color:#6b7280;">Student ID:</span> <strong>${E(student.member_code)}</strong></div>
+    <div><span style="color:#6b7280;">Class:</span> <strong>${E(cls?.class_name||'—')}</strong></div>
+    <div><span style="color:#6b7280;">Class Teacher:</span> <strong>${E(cls?.class_teacher||'—')}</strong></div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+    <thead><tr style="background:#111827;color:#fff;">
+      <th style="padding:6px 8px;text-align:left;">Subject</th>
+      <th style="padding:6px 8px;text-align:center;">Class Score (30%)</th>
+      <th style="padding:6px 8px;text-align:center;">Exam Score (70%)</th>
+      <th style="padding:6px 8px;text-align:center;">Final (100%)</th>
+      <th style="padding:6px 8px;text-align:center;">Grade</th>
+      <th style="padding:6px 8px;text-align:center;">Remarks</th>
+    </tr></thead>
+    <tbody style="font-size:9pt;">${subjectRows}
+    <tr style="background:#f9fafb;font-weight:700;border-top:2px solid #111;">
+      <td style="padding:6px 8px;">TOTALS</td><td colspan="2"></td>
+      <td style="padding:6px 8px;text-align:center;font-size:11pt;">${(student.total||0).toFixed(1)}</td>
+      <td colspan="2"></td>
+    </tr></tbody>
+  </table>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+    <div style="border:1px solid #e5e7eb;border-radius:5px;padding:8px;text-align:center;">
+      <div style="font-size:8pt;color:#6b7280;text-transform:uppercase;">Total Marks</div>
+      <div style="font-size:16pt;font-weight:bold;">${(student.total||0).toFixed(1)}</div>
+    </div>
+    <div style="border:1px solid #e5e7eb;border-radius:5px;padding:8px;text-align:center;">
+      <div style="font-size:8pt;color:#6b7280;text-transform:uppercase;">Average</div>
+      <div style="font-size:16pt;font-weight:bold;">${(student.avg||0).toFixed(1)}%</div>
+    </div>
+    <div style="border:2px solid #d4af37;background:#fefcbf;border-radius:5px;padding:8px;text-align:center;">
+      <div style="font-size:8pt;color:#92400e;text-transform:uppercase;">Position</div>
+      <div style="font-size:16pt;font-weight:bold;color:#92400e;">${ordinal(student.position)} / ${totalStudents}</div>
+    </div>
+  </div>
+  <div style="border:1px solid #e5e7eb;border-radius:5px;padding:10px;margin-bottom:12px;display:flex;gap:20px;align-items:center;">
+    <div style="font-size:8pt;color:#6b7280;text-transform:uppercase;font-weight:600;">Attendance</div>
+    <div style="font-size:9.5pt;"><strong>${daysPresent||0}</strong> days present this term</div>
+    <div style="font-size:8.5pt;color:#6b7280;">Absent: <strong>_____</strong></div>
+    <div style="font-size:8.5pt;color:#6b7280;">Late: <strong>_____</strong></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+    <div style="border:1px solid #e5e7eb;border-radius:5px;padding:10px;min-height:65px;">
+      <div style="font-size:8pt;color:#6b7280;margin-bottom:5px;">CLASS TEACHER'S REMARKS</div>
+      <div style="border-bottom:1px dashed #ccc;min-height:32px;"></div>
+    </div>
+    <div style="border:1px solid #e5e7eb;border-radius:5px;padding:10px;min-height:65px;">
+      <div style="font-size:8pt;color:#6b7280;margin-bottom:5px;">HEADMASTER'S REMARKS</div>
+      <div style="border-bottom:1px dashed #ccc;min-height:32px;"></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;border-top:2px solid #111;padding-top:10px;font-size:8.5pt;">
+    <div>Class Teacher: _______________<br><br>Signature: _______________</div>
+    <div style="text-align:center;">Date: _______________<br><br>School Stamp</div>
+    <div style="text-align:right;">Parent/Guardian: _______________<br><br>Signature: _______________</div>
+  </div>
+  <div style="text-align:center;margin-top:8px;font-size:7.5pt;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:5px;">
+    Generated by NYANSATEK School Management System
+  </div>
+</div>`;
+  if(inner)return body;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:A4;margin:12mm 15mm;}body{margin:0;}</style></head><body>${body}</body></html>`;
+}
+
+// ── BULK SMS ──────────────────────────────────────────────────
+async function sendBulkSMS2(){
+  const classId=document.getElementById('bs-class').value;
+  const msg=document.getElementById('bs-msg').value.trim();
+  if(!msg){alert('Please type a message first.');return;}
+  let recipients=members.filter(m=>m.guardian_phone&&m.is_active);
+  if(classId){
+    const{data:enr}=await sb.from('class_enrollments').select('member_id').eq('class_id',classId);
+    const ids=new Set((enr||[]).map(e=>e.member_id));
+    recipients=recipients.filter(m=>ids.has(m.id));
+  }
+  if(!recipients.length){alert('No members with guardian phone numbers found.');return;}
+  if(!confirm('Send SMS to '+recipients.length+' guardian(s)?'))return;
+  L(true);
+  let sent=0,failed=0;
+  for(const m of recipients){
+    try{
+      if(SMS_API_KEY)await fetch('https://sms.arkesel.com/sms/api?action=send-sms&api_key='+encodeURIComponent(SMS_API_KEY)+'&to='+encodeURIComponent(m.guardian_phone)+'&from='+encodeURIComponent(SMS_SENDER_ID)+'&sms='+encodeURIComponent(msg));
+      await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg});
+      sent++;
+    }catch(e){failed++;}
+  }
+  L(false);
+  document.getElementById('bs-msg').value='';
+  document.getElementById('bs-count').innerText='0 characters';
+  alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:'')+(!SMS_API_KEY?' (SMS_API_KEY not set — messages logged only)':''));
+}
+
+
+// ── MEMBER PHOTO ──────────────────────────────────────────────
+let mbPhoto=null;
+document.getElementById('mb-photo-file').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;
+  mbPhoto=await compressImage(file);
+  document.getElementById('mb-photo-preview').src=mbPhoto;
+  document.getElementById('mb-photo-preview').style.display='block';
+  document.getElementById('mb-photo-hint').style.display='none';
+});
+
+// ── PICKUP PERSON PHOTO ───────────────────────────────────────
+let pickupPhoto=null,currentPickupMemberId=null;
+document.getElementById('pu-photo-file').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;
+  pickupPhoto=await compressImage(file);
+  document.getElementById('pu-photo-preview').src=pickupPhoto;
+  document.getElementById('pu-photo-preview').style.display='block';
+  document.getElementById('pu-photo-hint').style.display='none';
+});
+
+// ── PICKUP MODE ───────────────────────────────────────────────
+async function handlePickupMode(member){
+  document.getElementById('pu-student-name').innerText=member.full_name+' — '+E(member.class_or_dept||'');
+  L(true);
+  const{data:pickups}=await sb.from('authorized_pickups').select('*')
+    .eq('member_id',member.id).eq('is_active',true).order('full_name');
+  L(false);
+  const box=document.getElementById('pu-persons');
+  if(!pickups||!pickups.length){
+    box.innerHTML='<p style="color:var(--d);font-weight:600;text-align:center;padding:12px;">&#9888; No authorized pickup persons on file for this student.<br><span style="font-size:.8rem;font-weight:400;color:var(--g);">Contact admin to add authorized persons.</span></p>';
+  }else{
+    box.innerHTML=pickups.map(p=>`
+      <div style="border:2px solid var(--b);border-radius:8px;padding:10px;text-align:center;">
+        ${p.photo_url
+          ?`<img src="${p.photo_url}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--s);margin-bottom:6px;">`
+          :`<div style="width:64px;height:64px;border-radius:50%;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin:0 auto 6px;">👤</div>`}
+        <div style="font-size:.82rem;font-weight:700;">${E(p.full_name)}</div>
+        <div style="font-size:.73rem;color:var(--g);margin-bottom:8px;">${E(p.relationship)}${p.phone?' · '+E(p.phone):''}</div>
+        <button class="btn bg2 bsm" onclick="confirmPickup('${p.id}','${member.id}','${E(p.full_name)}')">&#10003; Confirm Match</button>
+      </div>`).join('');
+  }
+  document.getElementById('pickup-overlay').style.display='flex';
+}
+
+async function confirmPickup(pickupId,memberId,pickupName){
+  L(true);
+  await sb.from('pickup_logs').insert({
+    institution_id:prof.institution_id,member_id:memberId,
+    authorized_pickup_id:pickupId,released_by:prof.id
+  });
+  await sb.from('notification_logs').insert({
+    institution_id:prof.institution_id,
+    recipient_phone:'gate',
+    message:'Student released to '+pickupName+' at '+new Date().toLocaleTimeString()
+  });
+  L(false);
+  document.getElementById('pickup-overlay').style.display='none';
+  document.getElementById('scan-input').focus();
+  const ls=document.getElementById('last-scan');
+  if(ls)ls.innerText='Pickup confirmed: released to '+pickupName+' at '+new Date().toLocaleTimeString();
+}
+
+function denyPickup(){
+  document.getElementById('pickup-overlay').style.display='none';
+  document.getElementById('scan-input').focus();
+  const ls=document.getElementById('last-scan');
+  if(ls)ls.innerText='Pickup DENIED — no authorized person matched.';
+}
+
+// ── PRINT PHOTO ID ────────────────────────────────────────────
+async function printMemberID(member){
+  const qrUrl=await generateQRDataUrl(member.member_code);
+  const card=buildIDCard(member,qrUrl);
+  printIF(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>@page{size:A4;margin:10mm;}body{display:grid;grid-template-columns:1fr 1fr;gap:6mm;padding:0;}</style>
+  </head><body>${card}${card}${card}${card}</body></html>`);
+}
+
+async function generateQRDataUrl(text){
+  return new Promise(resolve=>{
+    if(typeof QRCode==='undefined'){resolve('');return;}
+    QRCode.toDataURL(text,{width:150,margin:1,errorCorrectionLevel:'H'},
+      (err,url)=>resolve(err?'':url));
+  });
+}
+
+function buildIDCard(member,qrUrl){
+  const school=E(institution?.name||'Institution');
+  const photo=member.photo_url
+    ?`<img src="${member.photo_url}" style="width:20mm;height:23mm;object-fit:cover;border-radius:2mm;border:1px solid #e5e7eb;">`
+    :`<div style="width:20mm;height:23mm;background:#f3f4f6;border-radius:2mm;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">👤</div>`;
+  const qrImg=qrUrl?`<img src="${qrUrl}" style="width:17mm;height:17mm;">`:
+    `<div style="font-size:6pt;color:#9ca3af;">No QR</div>`;
+  return `<div style="width:85.6mm;height:54mm;border:2px solid #111827;border-radius:3mm;overflow:hidden;font-family:Arial,sans-serif;background:#fff;position:relative;page-break-inside:avoid;display:flex;flex-direction:column;">
+    <div style="background:#111827;color:#d4af37;text-align:center;padding:1.5mm 3mm;font-size:6.5pt;font-weight:bold;letter-spacing:0.3px;flex-shrink:0;">${school}</div>
+    <div style="display:flex;gap:2.5mm;padding:2.5mm;flex:1;align-items:flex-start;">
+      ${photo}
+      <div style="flex:1;display:flex;flex-direction:column;gap:0.8mm;">
+        <div style="font-size:7.5pt;font-weight:bold;color:#111827;line-height:1.2;">${E(member.full_name)}</div>
+        ${member.class_or_dept?`<div style="font-size:6.5pt;color:#374151;">${E(member.class_or_dept)}</div>`:''}
+        <div style="font-size:6pt;color:#6b7280;">ID: <strong>${E(member.member_code)}</strong></div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;align-items:flex-start;gap:0.5mm;">
+          ${qrImg}
+          <div style="font-size:4.5pt;color:#9ca3af;">Scan to clock in/out</div>
+        </div>
+      </div>
+    </div>
+    <div style="position:absolute;bottom:1.5mm;right:2mm;font-size:4.5pt;color:#d1d5db;letter-spacing:0.5px;">NYANSATEK</div>
+  </div>`;
+}
+
+// ── AUTHORIZED PICKUPS ────────────────────────────────────────
+function filterPickupMemberSearch(val){
+  const list=document.getElementById('pu-mdlist');
+  if(!val.trim()){list.classList.remove('on');return;}
+  const ms=members.filter(m=>m.full_name.toLowerCase().includes(val.toLowerCase()));
+  list.innerHTML='';
+  ms.slice(0,8).forEach(m=>{
+    const d=document.createElement('div');d.className='sdi';
+    d.innerText=m.full_name+' ('+m.member_code+')';
+    d.onclick=()=>{
+      currentPickupMemberId=m.id;
+      document.getElementById('pu-msch').value=m.full_name;
+      document.getElementById('pu-msel').innerText='Student: '+m.full_name;
+      list.classList.remove('on');
+      loadPickupList(m.id);
+    };
+    list.appendChild(d);
+  });
+  list.classList.toggle('on',ms.length>0);
+}
+
+async function loadPickupList(memberId){
+  const{data}=await sb.from('authorized_pickups').select('*')
+    .eq('member_id',memberId).eq('is_active',true).order('full_name');
+  const c=document.getElementById('pulist');
+  if(!data||!data.length){
+    c.innerHTML='<div class="es">No authorized pickup persons yet for this student.</div>';return;
+  }
+  c.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:8px;">
+  ${data.map(p=>`<div style="border:1px solid var(--b);border-radius:7px;padding:10px;text-align:center;">
+    ${p.photo_url
+      ?`<img src="${p.photo_url}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--s);margin-bottom:5px;">`
+      :`<div style="width:52px;height:52px;border-radius:50%;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin:0 auto 5px;">👤</div>`}
+    <div style="font-size:.78rem;font-weight:600;">${E(p.full_name)}</div>
+    <div style="font-size:.72rem;color:var(--g);">${E(p.relationship)}</div>
+    ${p.phone?`<div style="font-size:.72rem;">${E(p.phone)}</div>`:''}
+  </div>`).join('')}</div>`;
+}
+
+async function saveAuthorizedPickup(){
+  if(!currentPickupMemberId){alert('Search and select a student first.');return;}
+  const name=document.getElementById('pu-name').value.trim();
+  const rel=document.getElementById('pu-rel').value;
+  const phone=document.getElementById('pu-phone').value.trim();
+  if(!name||!rel){alert('Name and relationship are required.');return;}
+  L(true);
+  const{error}=await sb.from('authorized_pickups').insert({
+    institution_id:prof.institution_id,member_id:currentPickupMemberId,
+    full_name:name,relationship:rel,phone:phone||null,photo_url:pickupPhoto||null
+  });
+  L(false);if(error){alert('Error: '+error.message);return;}
+  ['pu-name','pu-phone'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('pu-rel').value='';
+  pickupPhoto=null;
+  const pp=document.getElementById('pu-photo-preview');pp.src='';pp.style.display='none';
+  document.getElementById('pu-photo-hint').style.display='block';
+  await loadPickupList(currentPickupMemberId);
+  alert('Authorized pickup person saved!');
+}
+
+// ── TEACHER SUBJECT ASSIGNMENTS ───────────────────────────────
+let teacherList=[];
+async function loadTeacherList(){
+  if(!prof?.institution_id)return;
+  const{data}=await sb.from('inst_profiles').select('*')
+    .eq('institution_id',prof.institution_id).eq('role','teacher');
+  teacherList=data||[];
+  const sel=document.getElementById('ts-teacher');if(!sel)return;
+  sel.innerHTML='<option value="">-- Select Teacher --</option>';
+  teacherList.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.display_name||'Teacher';sel.appendChild(o);});
+}
+
+async function loadSubjectsForTs(classId){
+  if(!classId)return;
+  const{data}=await sb.from('subjects').select('*').eq('class_id',classId).order('subject_name');
+  const sel=document.getElementById('ts-subj');if(!sel)return;
+  sel.innerHTML='<option value="">-- Select Subject --</option>';
+  (data||[]).forEach(s=>{const o=document.createElement('option');o.value=s.id;o.text=s.subject_name;sel.appendChild(o);});
+}
+
+async function saveTeacherSubject(){
+  const tid=document.getElementById('ts-teacher').value;
+  const cid=document.getElementById('ts-class').value;
+  const sid=document.getElementById('ts-subj').value;
+  if(!tid||!cid||!sid){alert('Select teacher, class and subject.');return;}
+  L(true);
+  const{error}=await sb.from('teacher_subjects').insert({institution_id:prof.institution_id,teacher_id:tid,class_id:cid,subject_id:sid});
+  L(false);if(error){alert('Error: '+error.message+' (may already be assigned)');return;}
+  await loadTeacherAssignmentList();alert('Subject assigned!');
+}
+
+async function loadTeacherAssignmentList(){
+  const{data}=await sb.from('teacher_subjects')
+    .select('*,inst_profiles(display_name),school_classes(class_name),subjects(subject_name)')
+    .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
+  const c=document.getElementById('tslist');if(!c)return;
+  if(!data||!data.length){c.innerHTML='<div class="es">No assignments yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Teacher</th><th>Class</th><th>Subject</th></tr></thead>
+  <tbody>${data.map(r=>`<tr>
+    <td><strong>${E(r.inst_profiles?.display_name||'—')}</strong></td>
+    <td>${E(r.school_classes?.class_name||'—')}</td>
+    <td>${E(r.subjects?.subject_name||'—')}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+// ── TEACHER SCORES VIEW ───────────────────────────────────────
+let teacherAssignments=[];
+async function initTeacherScores(){
+  if(prof.role!=='teacher')return;
+  const{data}=await sb.from('teacher_subjects')
+    .select('*,school_classes(id,class_name),subjects(id,subject_name)')
+    .eq('teacher_id',prof.id);
+  teacherAssignments=data||[];
+  // Populate class dropdown with only teacher's classes
+  const classMap=new Map();
+  teacherAssignments.forEach(a=>{if(!classMap.has(a.class_id))classMap.set(a.class_id,a.school_classes);});
+  const tcs=document.getElementById('tc-class');
+  if(tcs){
+    tcs.innerHTML='<option value="">-- Select Class --</option>';
+    classMap.forEach((cls,id)=>{const o=document.createElement('option');o.value=id;o.text=cls?.class_name||id;tcs.appendChild(o);});
+  }
+  // Populate term dropdown
+  const tct=document.getElementById('tc-term');
+  if(tct){
+    tct.innerHTML='<option value="">-- Select Term --</option>';
+    academicTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name+' ('+t.academic_year+')';tct.appendChild(o);});
+  }
+}
+
+function loadTeacherSubjectsForClass(classId){
+  const sel=document.getElementById('tc-subj');if(!sel)return;
+  sel.innerHTML='<option value="">-- Select Subject --</option>';
+  teacherAssignments.filter(a=>a.class_id===classId).forEach(a=>{
+    const o=document.createElement('option');o.value=a.subject_id;o.text=a.subjects?.subject_name||'—';sel.appendChild(o);
+  });
+}
+
+async function loadTeacherGradebook(){
+  const termId=document.getElementById('tc-term').value;
+  const classId=document.getElementById('tc-class').value;
+  const subjId=document.getElementById('tc-subj').value;
+  if(!termId||!classId||!subjId){alert('Select term, class and subject.');return;}
+  // Verify teacher is assigned this subject
+  const ok=teacherAssignments.some(a=>a.class_id===classId&&a.subject_id===subjId);
+  if(!ok){alert('You are not assigned to this subject.');return;}
+  gbTermId=termId;gbClassId=classId;gbSubjectId=subjId;
+  L(true);
+  const[{data:enr},{data:sc}]=await Promise.all([
+    sb.from('class_enrollments').select('*,members(id,full_name,member_code)').eq('class_id',classId),
+    sb.from('scores').select('*').eq('term_id',termId).eq('class_id',classId).eq('subject_id',subjId)
+  ]);
+  L(false);
+  const students=(enr||[]).map(e=>e.members).filter(Boolean).sort((a,b)=>a.full_name.localeCompare(b.full_name));
+  const scoreMap={};(sc||[]).forEach(s=>scoreMap[s.member_id]=s);
+  const c=document.getElementById('tc-content');
+  if(!students.length){c.innerHTML='<div class="es">No students enrolled in this class.</div>';return;}
+  const rows=students.map(s=>{
+    const sc2=scoreMap[s.id]||{};
+    const gi=sc2.final_score!=null?gradeInfo(sc2.final_score):{g:'—',r:'—',c:'var(--g)'};
+    return `<tr>
+      <td>${E(s.full_name)}<br><span style="font-size:.7rem;color:var(--g);">${E(s.member_code)}</span></td>
+      <td><input type="number" min="0" max="100" step="0.5" class="ip" style="width:68px;"
+          data-mid="${s.id}" data-type="cs" value="${sc2.class_score!=null?sc2.class_score:''}" placeholder="0"
+          oninput="previewScore(this)"></td>
+      <td><input type="number" min="0" max="100" step="0.5" class="ip" style="width:68px;"
+          data-mid="${s.id}" data-type="es" value="${sc2.exam_score!=null?sc2.exam_score:''}" placeholder="0"
+          oninput="previewScore(this)"></td>
+      <td style="font-weight:600;text-align:center;" class="fs-${s.id}">${sc2.final_score!=null?sc2.final_score.toFixed(1):'—'}</td>
+      <td style="font-weight:700;text-align:center;color:${gi.c};" class="gd-${s.id}">${gi.g}</td>
+      <td style="color:${gi.c};font-size:.78rem;" class="rm-${s.id}">${gi.r}</td>
+    </tr>`;
+  });
+  c.innerHTML=`<table><thead><tr><th>Student</th><th>Class Score (30%)</th><th>Exam Score (70%)</th>
+    <th style="text-align:center;">Final</th><th style="text-align:center;">Grade</th><th>Remarks</th></tr></thead>
+  <tbody>${rows.join('')}</tbody></table>
+  <button class="btn bf ba" style="margin-top:10px;" onclick="saveAllScores()">&#128190; Save All Scores</button>`;
+}
+
+// ── POPULATE ts-class dropdown ────────────────────────────────
+// When admin opens Teachers tab, populate class select
+function populateTsClassSel(){
+  const sel=document.getElementById('ts-class');if(!sel)return;
+  sel.innerHTML='<option value="">-- Select Class --</option>';
+  classes.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.text=c.class_name+' ('+c.level+')';sel.appendChild(o);});
+}
+
+// Close dropdowns on outside click
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.sdrop'))
+    document.querySelectorAll('.sdlist').forEach(d=>d.classList.remove('on'));
+});
+
+// Boot
+(async function(){
+  L(true);
+  const{data:{session:s}}=await sb.auth.getSession();L(false);
+  if(s)await boot2();else scr('l');
+})();
+</script>
+</body>
+</html>
