@@ -713,10 +713,9 @@ document.getElementById('lf').addEventListener('submit',async e=>{
   const biz=document.getElementById('lb').value.trim(),pw=document.getElementById('lp').value;
   const btn=document.getElementById('lbtn');btn.disabled=true;btn.innerText='Signing in...';
   try{
-    const{data:row,error:le}=await sb.from('inst_login_lookup').select('login_email')
-      .ilike('institution_name',biz).maybeSingle();
-    if(le||!row)throw new Error('Institution name or password is incorrect.');
-    const{error:ae}=await sb.auth.signInWithPassword({email:row.login_email,password:pw});
+    const{data:loginEmail,error:le}=await sb.rpc('lookup_login_email',{p_institution_name:biz});
+    if(le||!loginEmail)throw new Error('Institution name or password is incorrect.');
+    const{error:ae}=await sb.auth.signInWithPassword({email:loginEmail,password:pw});
     if(ae)throw new Error('Institution name or password is incorrect.');
     await boot2();
   }catch(err){eb.innerText=err.message;eb.classList.add('on');}
