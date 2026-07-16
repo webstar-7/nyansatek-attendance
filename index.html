@@ -272,6 +272,7 @@ footer strong{color:var(--a);}
         <h2>Institution Management</h2>
         <div class="tbar" id="atbar">
           <button class="tb on" onclick="swTab('mb')">&#128101; Members</button>
+          <button class="tb" onclick="swTab('sp')">&#128196; Student Profile</button>
           <button class="tb" onclick="swTab('ft')">&#128197; Fee Terms</button>
           <button class="tb" onclick="swTab('fp')">&#128176; Fee Payments</button>
           <button class="tb" onclick="swTab('ar')">&#128202; Attendance Report</button>
@@ -301,6 +302,8 @@ footer strong{color:var(--a);}
                 <input type="text" id="mb-code" placeholder="e.g. STU-001 or 2026001"></div>
               <div class="fg"><label>Class / Department</label>
                 <input type="text" id="mb-dept" placeholder="e.g. JHS 2A or Finance"></div>
+              <div class="fg"><label>Gender</label>
+                <select id="mb-gender"><option value="">-- Select --</option><option>Male</option><option>Female</option></select></div>
               <div class="fg"><label>Guardian / Emergency Contact Name</label>
                 <input type="text" id="mb-gname"></div>
               <div class="fg"><label>Guardian / Emergency Phone *</label>
@@ -323,13 +326,31 @@ footer strong{color:var(--a);}
           </div>
         </div>
 
+        <!-- STUDENT PROFILE -->
+        <div class="tp" id="tp-sp">
+          <div style="max-width:640px;">
+            <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Search Student</h3>
+            <div class="fg">
+              <div class="sdrop">
+                <input type="text" id="sp-msch" placeholder="Type student name or code..."
+                  autocomplete="off" oninput="filterStudentProfileSearch(this.value)">
+                <div class="sdlist" id="sp-mdlist"></div>
+              </div>
+            </div>
+          </div>
+          <div id="sp-content"><div class="es">Search and select a student above to view their full profile.</div></div>
+        </div>
+
         <!-- FEE TERMS -->
         <div class="tp" id="tp-ft">
           <div class="admin-grid">
             <div>
               <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Fee Term</h3>
+              <p class="hint">Set a different amount per class each term, or leave Class as "All Classes" for a default rate that applies to any class without its own override.</p>
               <div class="fg"><label>Term Name *</label>
                 <input type="text" id="ft-name" placeholder="e.g. Term 1 — 2026"></div>
+              <div class="fg"><label>Class</label>
+                <select id="ft-class"><option value="">All Classes (default rate)</option></select></div>
               <div class="fg"><label>Amount (GH&#8373;) *</label>
                 <input type="number" step="0.01" id="ft-amt"></div>
               <div class="fg"><label>Start Date *</label><input type="date" id="ft-start"></div>
@@ -440,7 +461,8 @@ footer strong{color:var(--a);}
                   <option value="Primary">Primary</option><option value="JHS">JHS</option>
                   <option value="SHS">SHS</option><option value="Other">Other</option>
                 </select></div>
-              <div class="fg"><label>Class Teacher</label><input type="text" id="cl-teacher"></div>
+              <div class="fg"><label>Class Teacher</label>
+                <select id="cl-teacher"><option value="">-- None / Assign Later --</option></select></div>
               <button class="btn bf" onclick="saveClass()">Create Class</button>
               <hr style="margin:14px 0;border-color:var(--b);">
               <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Subject to Class</h3>
@@ -487,6 +509,8 @@ footer strong{color:var(--a);}
               <select id="gb-subj"><option value="">-- Select Subject --</option></select></div>
             <button class="btn" onclick="loadGradebook()">Load Scores</button>
           </div>
+          <input type="text" id="gb-search" placeholder="Search student by name or code..." oninput="filterGbRows('gb-content',this.value)"
+            style="width:100%;max-width:320px;padding:7px 9px;border:1px solid var(--b);border-radius:4px;font-size:.81rem;margin-bottom:10px;display:none;">
           <div id="gb-content"><div class="es">Select term, class and subject above.</div></div>
         </div>
 
@@ -577,6 +601,28 @@ footer strong{color:var(--a);}
               <div id="tslist" style="margin-top:8px;"><div class="es">Click Refresh to load.</div></div>
             </div>
           </div>
+          <hr style="margin:18px 0;border-color:var(--b);">
+          <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Teacher Profile</h3>
+          <div class="admin-grid">
+            <div>
+              <div class="fg"><label>Select Teacher</label>
+                <select id="tp-teacher-sel" onchange="loadTeacherProfile(this.value)"><option value="">-- Select Teacher --</option></select></div>
+              <div class="photo-zone" id="tp-photo-zone" onclick="document.getElementById('tp-photo-file').click()">
+                <img id="tp-photo-preview" src="" alt="" style="display:none;">
+                <div id="tp-photo-hint"><div style="font-size:1.5rem;">&#128247;</div>
+                  <div style="font-size:.75rem;color:var(--g);margin-top:3px;">Tap to take/upload photo</div></div>
+              </div>
+              <input type="file" id="tp-photo-file" accept="image/*" capture="user" style="display:none;">
+              <div class="fg"><label>Gender</label>
+                <select id="tp-gender"><option value="">-- Select --</option><option>Male</option><option>Female</option></select></div>
+              <div class="fg"><label>Date of Birth</label><input type="date" id="tp-dob"></div>
+              <button class="btn bf ba" onclick="saveTeacherProfile()">Save Teacher Profile</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Overview</h3>
+              <div id="tp-view"><div class="es">Select a teacher to view their profile.</div></div>
+            </div>
+          </div>
         </div>
 
       </div>
@@ -597,6 +643,8 @@ footer strong{color:var(--a);}
             <select id="tc-subj"><option value="">-- Select Subject --</option></select></div>
           <button class="btn" onclick="loadTeacherGradebook()">Load</button>
         </div>
+        <input type="text" id="tc-search" placeholder="Search student by name or code..." oninput="filterGbRows('tc-content',this.value)"
+          style="width:100%;max-width:320px;padding:7px 9px;border:1px solid var(--b);border-radius:4px;font-size:.81rem;margin-bottom:10px;display:none;">
         <div id="tc-content"><div class="es">Select your term, class and subject above.</div></div>
       </div>
     </div>
@@ -858,11 +906,15 @@ async function processScan(code){
 
 async function checkFeeStatus(memberId){
   const today=td();
-  const{data:terms}=await sb.from('fee_terms').select('*')
+  const classId=await getMemberClassId(memberId);
+  let q=sb.from('fee_terms').select('*')
     .eq('institution_id',prof.institution_id).eq('is_active',true)
-    .lte('start_date',today).gte('end_date',today).limit(1);
+    .lte('start_date',today).gte('end_date',today);
+  q=classId?q.or(`class_id.eq.${classId},class_id.is.null`):q.is('class_id',null);
+  const{data:terms}=await q;
   if(!terms||!terms.length)return{status:'no_term',balance:0};
-  const term=terms[0];
+  // Prefer a class-specific fee term over the "All Classes" default rate
+  const term=terms.find(t=>t.class_id===classId)||terms.find(t=>!t.class_id)||terms[0];
   const{data:pays}=await sb.from('fee_payments').select('amount_paid')
     .eq('member_id',memberId).eq('fee_term_id',term.id);
   const paid=(pays||[]).reduce((s,p)=>s+p.amount_paid,0);
@@ -990,6 +1042,7 @@ async function saveMember(){
   const name=document.getElementById('mb-name').value.trim();
   const code=document.getElementById('mb-code').value.trim();
   const dept=document.getElementById('mb-dept').value.trim();
+  const gender=document.getElementById('mb-gender').value;
   const gname=document.getElementById('mb-gname').value.trim();
   const gphone=document.getElementById('mb-gphone').value.trim();
   const ne=document.getElementById('mb-nentry').checked;
@@ -998,13 +1051,15 @@ async function saveMember(){
   L(true);
   const{error}=await sb.from('members').insert({
     institution_id:prof.institution_id,
-    member_code:code,full_name:name,class_or_dept:dept||null,
+    member_code:code,full_name:name,class_or_dept:dept||null,gender:gender||null,
     guardian_name:gname||null,guardian_phone:gphone||null,
     notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null
   });
   L(false);
   if(error){alert('Error: '+error.message);return;}
   ['mb-name','mb-code','mb-dept','mb-gname','mb-gphone'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mb-gender').value='';
+  mbPhoto=null;document.getElementById('mb-photo-preview').style.display='none';document.getElementById('mb-photo-hint').style.display='block';
   await loadMembers();alert('Member registered!');
 }
 
@@ -1027,6 +1082,73 @@ function filterMemberSearch(val){
   list.classList.toggle('on',ms.length>0);
 }
 
+// ── STUDENT PROFILE ───────────────────────────────────────────
+function filterStudentProfileSearch(val){
+  const list=document.getElementById('sp-mdlist');
+  if(!val.trim()){list.classList.remove('on');return;}
+  const v=val.toLowerCase();
+  const ms=members.filter(m=>m.full_name.toLowerCase().includes(v)||m.member_code.toLowerCase().includes(v));
+  list.innerHTML='';
+  ms.slice(0,8).forEach(m=>{
+    const d=document.createElement('div');d.className='sdi';
+    d.innerText=`${m.full_name} (${m.member_code})`;
+    d.onclick=()=>{
+      document.getElementById('sp-msch').value=m.full_name;
+      list.classList.remove('on');
+      loadStudentProfile(m.id);
+    };
+    list.appendChild(d);
+  });
+  list.classList.toggle('on',ms.length>0);
+}
+
+async function getMemberClassId(memberId){
+  const{data}=await sb.from('class_enrollments').select('class_id,created_at')
+    .eq('member_id',memberId).order('created_at',{ascending:false}).limit(1);
+  return(data&&data.length)?data[0].class_id:null;
+}
+
+async function loadStudentProfile(memberId){
+  const c=document.getElementById('sp-content');
+  c.innerHTML='<div class="es">Loading...</div>';
+  const m=members.find(x=>x.id===memberId);
+  if(!m){c.innerHTML='<div class="es">Student not found.</div>';return;}
+  const classId=await getMemberClassId(memberId);
+  const cls=classes.find(x=>x.id===classId);
+  const fee=await checkFeeStatus(memberId);
+  const{count:presentCount}=await sb.from('attendance_logs').select('id',{count:'exact',head:true})
+    .eq('member_id',memberId).eq('institution_id',prof.institution_id).eq('status','allowed');
+  const{count:deniedCount}=await sb.from('attendance_logs').select('id',{count:'exact',head:true})
+    .eq('member_id',memberId).eq('institution_id',prof.institution_id).eq('status','denied');
+  const photoHtml=m.photo_url
+    ?`<img src="${E(m.photo_url)}" style="width:96px;height:96px;border-radius:10px;object-fit:cover;border:2px solid var(--b);">`
+    :`<div style="width:96px;height:96px;border-radius:10px;background:var(--bg);border:2px solid var(--b);display:flex;align-items:center;justify-content:center;font-size:2rem;">&#128100;</div>`;
+  c.innerHTML=`<div class="card" style="max-width:640px;margin-top:6px;">
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      ${photoHtml}
+      <div style="flex:1;min-width:200px;">
+        <div style="font-size:1.05rem;font-weight:700;color:var(--p);">${E(m.full_name)}</div>
+        <div style="font-size:.78rem;color:var(--g);font-family:monospace;">${E(m.member_code)}</div>
+        <table style="margin-top:10px;width:100%;">
+          <tbody>
+            <tr><td style="padding:3px 0;color:var(--g);width:120px;">Class</td><td>${E(cls?cls.class_name+' ('+cls.level+')':(m.class_or_dept||'—'))}</td></tr>
+            <tr><td style="padding:3px 0;color:var(--g);">Gender</td><td>${E(m.gender||'—')}</td></tr>
+            <tr><td style="padding:3px 0;color:var(--g);">Guardian</td><td>${E(m.guardian_name||'—')} ${m.guardian_phone?'('+E(m.guardian_phone)+')':''}</td></tr>
+            <tr><td style="padding:3px 0;color:var(--g);">Fees Balance</td><td>
+              ${fee.status==='no_term'?'<span class="badge by">No active fee term</span>'
+                :fee.status==='paid'?'<span class="badge bg">Paid up ('+E(fee.term)+')</span>'
+                :'<span class="badge br">'+GH(fee.balance)+' outstanding ('+E(fee.term)+')</span>'}
+            </td></tr>
+            <tr><td style="padding:3px 0;color:var(--g);">Attendance</td><td>${presentCount||0} entries allowed, ${deniedCount||0} denied</td></tr>
+            <tr><td style="padding:3px 0;color:var(--g);">Status</td><td><span class="badge ${m.is_active?'bg':'br'}">${m.is_active?'Active':'Inactive'}</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn bsm ba" style="margin-top:14px;" onclick='printMemberID(${JSON.stringify(m)})'>&#127760; Print ID Card</button>
+  </div>`;
+}
+
 // ── FEE TERMS ─────────────────────────────────────────────────
 async function loadFeeTerms(){
   const{data}=await sb.from('fee_terms').select('*')
@@ -1035,15 +1157,23 @@ async function loadFeeTerms(){
   renderFeeTermList();
   const sel=document.getElementById('fp-term');
   sel.innerHTML='<option value="">-- Select Term --</option>';
-  feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name;sel.appendChild(o);});
+  feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name+(t.class_id?' — '+(classes.find(c=>c.id===t.class_id)?.class_name||'class'):' (All Classes)');sel.appendChild(o);});
+  const csel=document.getElementById('ft-class');
+  if(csel){
+    const cur=csel.value;
+    csel.innerHTML='<option value="">All Classes (default rate)</option>';
+    classes.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.text=c.class_name+' ('+c.level+')';csel.appendChild(o);});
+    if(cur)csel.value=cur;
+  }
 }
 
 function renderFeeTermList(){
   const c=document.getElementById('ftlist');
   if(!feeTerms.length){c.innerHTML='<div class="es">No fee terms yet.</div>';return;}
-  c.innerHTML=`<table><thead><tr><th>Term</th><th>Amount</th><th>Period</th><th>Status</th></tr></thead>
+  c.innerHTML=`<table><thead><tr><th>Term</th><th>Class</th><th>Amount</th><th>Period</th><th>Status</th></tr></thead>
   <tbody>${feeTerms.map(t=>`<tr>
     <td><strong>${E(t.term_name)}</strong></td>
+    <td>${t.class_id?E(classes.find(c=>c.id===t.class_id)?.class_name||'—'):'<span class="badge" style="background:#ede9fe;color:#5b21b6;">All Classes</span>'}</td>
     <td>${GH(t.amount)}</td>
     <td style="font-size:.75rem;">${t.start_date} to ${t.end_date}</td>
     <td><span class="badge ${t.is_active?'bg':'by'}">${t.is_active?'Active':'Inactive'}</span></td>
@@ -1052,6 +1182,7 @@ function renderFeeTermList(){
 
 async function saveFeeTerm(){
   const name=document.getElementById('ft-name').value.trim();
+  const classId=document.getElementById('ft-class').value||null;
   const amt=parseFloat(document.getElementById('ft-amt').value)||0;
   const start=document.getElementById('ft-start').value;
   const end=document.getElementById('ft-end').value;
@@ -1059,15 +1190,19 @@ async function saveFeeTerm(){
   if(!name||amt<=0||!start||!end){alert('All fields are required.');return;}
   L(true);
   if(active){
-    await sb.from('fee_terms').update({is_active:false}).eq('institution_id',prof.institution_id);
+    // Only deactivate other fee terms within the same scope (same class, or the "all classes" default)
+    let q=sb.from('fee_terms').update({is_active:false}).eq('institution_id',prof.institution_id);
+    q=classId?q.eq('class_id',classId):q.is('class_id',null);
+    await q;
   }
   const{error}=await sb.from('fee_terms').insert({
-    institution_id:prof.institution_id,term_name:name,amount:amt,
+    institution_id:prof.institution_id,term_name:name,class_id:classId,amount:amt,
     start_date:start,end_date:end,is_active:active
   });
   L(false);
   if(error){alert('Error: '+error.message);return;}
   ['ft-name','ft-amt'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ft-class').value='';
   await loadFeeTerms();alert('Fee term saved!');
 }
 
@@ -1175,18 +1310,19 @@ async function loadNotifHistory(){
 
 // ── ADMIN TABS ────────────────────────────────────────────────
 function swTab(tab){
-  ['mb','ft','fp','ar','nl','at','cl','gb','rc','bs','pu','ts'].forEach(t=>{
+  const order=['mb','sp','ft','fp','ar','nl','at','cl','gb','rc','bs','pu','ts'];
+  order.forEach(t=>{
     const p=document.getElementById('tp-'+t);if(p)p.classList.toggle('on',t===tab);
   });
   document.getElementById('atbar').querySelectorAll('.tb')
-    .forEach((b,i)=>b.classList.toggle('on',['mb','ft','fp','ar','nl','at','cl','gb','rc','bs','pu','ts'][i]===tab));
+    .forEach((b,i)=>b.classList.toggle('on',order[i]===tab));
   if(tab==='ft')loadFeeTerms();
   if(tab==='fp')loadPaymentHistory();
   if(tab==='nl')loadNotifHistory();
   if(tab==='at'){loadAcademicTerms();}
-  if(tab==='cl'){loadClasses();}
+  if(tab==='cl'){loadTeacherList().then(loadClasses);}
   if(tab==='pu'){loadTeacherList();}
-  if(tab==='ts'){loadTeacherList();populateTsClassSel();loadTeacherAssignmentList();}
+  if(tab==='ts'){loadTeacherList().then(()=>{populateTsClassSel();loadTeacherAssignmentList();renderTeacherProfileSelect();});}
 }
 
 // ── MASTER ────────────────────────────────────────────────────
@@ -1317,20 +1453,43 @@ async function loadClasses(){
 function renderClassList2(){
   const c=document.getElementById('cllist');if(!c)return;
   if(!classes.length){c.innerHTML='<div class="es">No classes yet.</div>';return;}
-  c.innerHTML=`<table><thead><tr><th>Class</th><th>Level</th><th>Teacher</th></tr></thead>
+  const teacherOpts=t=>teacherList.map(tr=>`<option value="${tr.id}" ${tr.id===t?'selected':''}>${E(tr.display_name||'Teacher')}</option>`).join('');
+  c.innerHTML=`<table><thead><tr><th>Class</th><th>Level</th><th>Teacher</th><th>Reassign</th></tr></thead>
   <tbody>${classes.map(cl=>`<tr>
     <td><strong>${E(cl.class_name)}</strong></td>
     <td><span class="badge" style="background:#ede9fe;color:#5b21b6;">${E(cl.level)}</span></td>
     <td>${E(cl.class_teacher||'—')}</td>
+    <td style="display:flex;gap:5px;">
+      <select id="clr-${cl.id}" style="font-size:.75rem;padding:3px;">
+        <option value="">-- None --</option>${teacherOpts(cl.class_teacher_id)}
+      </select>
+      <button class="btn bsm" onclick="reassignClassTeacher('${cl.id}')">Set</button>
+    </td>
   </tr>`).join('')}</tbody></table>`;
+}
+async function reassignClassTeacher(classId){
+  const sel=document.getElementById('clr-'+classId);
+  const teacherId=sel.value||null;
+  const teacher=teacherList.find(t=>t.id===teacherId);
+  L(true);
+  const{error}=await sb.from('school_classes').update({
+    class_teacher_id:teacherId,class_teacher:teacher?teacher.display_name:null
+  }).eq('id',classId);
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  await loadClasses();alert('Class teacher updated!');
 }
 async function saveClass(){
   const name=document.getElementById('cl-name').value.trim();
   const level=document.getElementById('cl-level').value;
-  const teacher=document.getElementById('cl-teacher').value.trim();
+  const teacherId=document.getElementById('cl-teacher').value||null;
+  const teacher=teacherList.find(t=>t.id===teacherId);
   if(!name||!level){alert('Class name and level are required.');return;}
   L(true);
-  const{error}=await sb.from('school_classes').insert({institution_id:prof.institution_id,class_name:name,level,class_teacher:teacher||null});
+  const{error}=await sb.from('school_classes').insert({
+    institution_id:prof.institution_id,class_name:name,level,
+    class_teacher_id:teacherId,class_teacher:teacher?teacher.display_name:null
+  });
   L(false);if(error){alert('Error: '+error.message);return;}
   document.getElementById('cl-name').value='';document.getElementById('cl-teacher').value='';
   await loadClasses();alert('Class created!');
@@ -1425,7 +1584,7 @@ function renderGradebook(students,scoreMap){
   const rows=students.map(s=>{
     const sc=scoreMap[s.id]||{};
     const gi=sc.final_score!=null?gradeInfo(sc.final_score):{g:'—',r:'—',c:'var(--g)'};
-    return `<tr>
+    return `<tr data-name="${E((s.full_name+' '+s.member_code).toLowerCase())}">
       <td>${E(s.full_name)}<br><span style="font-size:.7rem;color:var(--g);">${E(s.member_code)}</span></td>
       <td><input type="number" min="0" max="100" step="0.5" class="ip" style="width:68px;"
           data-mid="${s.id}" data-type="cs" value="${sc.class_score!=null?sc.class_score:''}" placeholder="0"
@@ -1442,6 +1601,14 @@ function renderGradebook(students,scoreMap){
     <th style="text-align:center;">Final</th><th style="text-align:center;">Grade</th><th>Remarks</th></tr></thead>
   <tbody>${rows.join('')}</tbody></table>
   <button class="btn bf ba" style="margin-top:10px;" onclick="saveAllScores()">&#128190; Save All Scores</button>`;
+  const gbs=document.getElementById('gb-search');if(gbs){gbs.style.display='block';gbs.value='';}
+}
+function filterGbRows(containerId,val){
+  const v=val.trim().toLowerCase();
+  document.querySelectorAll('#'+containerId+' tbody tr').forEach(row=>{
+    const name=row.dataset.name||'';
+    row.style.display=(!v||name.includes(v))?'':'none';
+  });
 }
 function previewScore(inp){
   const row=inp.closest('tr');
@@ -1507,10 +1674,9 @@ async function loadReportSummary(){
   }).sort((a,b)=>b.total-a.total);
   studentData.forEach((s,i)=>s.position=i+1);
   const cls=classes.find(c=>c.id===rcClassId);
-  const currentTerm=academicTerms.find(t=>t.id===rcTermId);
   const n=studentData.length;
   document.getElementById('rc-content').innerHTML=`
-  <p class="hint">Ranked by total marks across all subjects. ${n} students — ${cls?.class_name||''} — ${currentTerm?.term_name||''}</p>
+  <p class="hint">Ranked by total marks across all subjects. ${n} students — ${cls?.class_name||''} — ${term?.term_name||''}</p>
   <table><thead><tr><th style="text-align:center;">Pos.</th><th>Student</th><th style="text-align:center;">Subjects</th>
     <th style="text-align:right;">Total</th><th style="text-align:right;">Average</th><th></th></tr></thead>
   <tbody>${studentData.map(s=>`<tr>
@@ -1551,7 +1717,7 @@ function buildRCHtml(student,scores,cls,term,totalStudents,inner,daysPresent){
   <div style="text-align:center;border-bottom:3px double #111;padding-bottom:10px;margin-bottom:14px;">
     <div style="font-size:18pt;font-weight:bold;text-transform:uppercase;letter-spacing:1px;">${school}</div>
     <div style="font-size:10pt;font-weight:bold;letter-spacing:3px;margin-top:4px;">ACADEMIC REPORT CARD</div>
-    <div style="font-size:9pt;color:#555;margin-top:2px;">${E(currentTerm?.term_name||'—')} &bull; ${E(currentTerm?.academic_year||'—')}</div>
+    <div style="font-size:9pt;color:#555;margin-top:2px;">${E(term?.term_name||'—')} &bull; ${E(term?.academic_year||'—')}</div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;font-size:9.5pt;">
     <div><span style="color:#6b7280;">Student Name:</span> <strong>${E(student.full_name)}</strong></div>
@@ -1646,6 +1812,29 @@ async function sendBulkSMS2(){
   alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:'')+(!SMS_API_KEY?' (SMS_API_KEY not set — messages logged only)':''));
 }
 
+
+// ── IMAGE COMPRESSION (shared by all photo upload zones) ───────
+function compressImage(file,maxDim=480,quality=0.72){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Could not read file'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('Could not load image'));
+      img.onload=()=>{
+        let w=img.width,h=img.height;
+        if(w>h&&w>maxDim){h=Math.round(h*maxDim/w);w=maxDim;}
+        else if(h>=w&&h>maxDim){w=Math.round(w*maxDim/h);h=maxDim;}
+        const canvas=document.createElement('canvas');
+        canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg',quality));
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 // ── MEMBER PHOTO ──────────────────────────────────────────────
 let mbPhoto=null;
@@ -1825,9 +2014,18 @@ async function loadTeacherList(){
   const{data}=await sb.from('inst_profiles').select('*')
     .eq('institution_id',prof.institution_id).eq('role','teacher');
   teacherList=data||[];
-  const sel=document.getElementById('ts-teacher');if(!sel)return;
-  sel.innerHTML='<option value="">-- Select Teacher --</option>';
-  teacherList.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.display_name||'Teacher';sel.appendChild(o);});
+  const sel=document.getElementById('ts-teacher');
+  if(sel){
+    sel.innerHTML='<option value="">-- Select Teacher --</option>';
+    teacherList.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.display_name||'Teacher';sel.appendChild(o);});
+  }
+  const clsel=document.getElementById('cl-teacher');
+  if(clsel){
+    const cur=clsel.value;
+    clsel.innerHTML='<option value="">-- None / Assign Later --</option>';
+    teacherList.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.display_name||'Teacher';clsel.appendChild(o);});
+    if(cur)clsel.value=cur;
+  }
 }
 
 async function loadSubjectsForTs(classId){
@@ -1849,18 +2047,105 @@ async function saveTeacherSubject(){
   await loadTeacherAssignmentList();alert('Subject assigned!');
 }
 
+let teacherAssignmentList=[];
 async function loadTeacherAssignmentList(){
   const{data}=await sb.from('teacher_subjects')
     .select('*,inst_profiles(display_name),school_classes(class_name),subjects(subject_name)')
     .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
+  teacherAssignmentList=data||[];
   const c=document.getElementById('tslist');if(!c)return;
-  if(!data||!data.length){c.innerHTML='<div class="es">No assignments yet.</div>';return;}
-  c.innerHTML=`<table><thead><tr><th>Teacher</th><th>Class</th><th>Subject</th></tr></thead>
-  <tbody>${data.map(r=>`<tr>
+  if(!teacherAssignmentList.length){c.innerHTML='<div class="es">No assignments yet.</div>';return;}
+  const teacherOpts=cur=>teacherList.map(t=>`<option value="${t.id}" ${t.id===cur?'selected':''}>${E(t.display_name||'Teacher')}</option>`).join('');
+  c.innerHTML=`<table><thead><tr><th>Teacher</th><th>Class</th><th>Subject</th><th>Reassign to</th><th></th></tr></thead>
+  <tbody>${teacherAssignmentList.map(r=>`<tr>
     <td><strong>${E(r.inst_profiles?.display_name||'—')}</strong></td>
     <td>${E(r.school_classes?.class_name||'—')}</td>
     <td>${E(r.subjects?.subject_name||'—')}</td>
+    <td style="display:flex;gap:5px;">
+      <select id="tsr-${r.id}" style="font-size:.75rem;padding:3px;">${teacherOpts(r.teacher_id)}</select>
+      <button class="btn bsm" onclick="reassignTeacherSubject('${r.id}')">Set</button>
+    </td>
+    <td><button class="btn bsm" style="color:var(--d);border-color:var(--d);" onclick="removeTeacherSubject('${r.id}')">Remove</button></td>
   </tr>`).join('')}</tbody></table>`;
+}
+async function reassignTeacherSubject(assignmentId){
+  const sel=document.getElementById('tsr-'+assignmentId);
+  const teacherId=sel.value;
+  if(!teacherId)return;
+  L(true);
+  const{error}=await sb.from('teacher_subjects').update({teacher_id:teacherId}).eq('id',assignmentId);
+  L(false);
+  if(error){alert('Error: '+error.message+' (that teacher may already have this class/subject)');return;}
+  await loadTeacherAssignmentList();alert('Assignment reassigned!');
+}
+async function removeTeacherSubject(assignmentId){
+  if(!confirm('Remove this teacher-subject assignment?'))return;
+  L(true);
+  const{error}=await sb.from('teacher_subjects').delete().eq('id',assignmentId);
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  await loadTeacherAssignmentList();
+}
+
+// ── TEACHER PROFILE (photo, gender, DOB/age) ────────────────────
+let tpPhoto=null;
+document.getElementById('tp-photo-file').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;
+  tpPhoto=await compressImage(file);
+  document.getElementById('tp-photo-preview').src=tpPhoto;
+  document.getElementById('tp-photo-preview').style.display='block';
+  document.getElementById('tp-photo-hint').style.display='none';
+});
+function calcAge(dob){
+  if(!dob)return null;
+  const d=new Date(dob),n=new Date();
+  let age=n.getFullYear()-d.getFullYear();
+  if(n.getMonth()<d.getMonth()||(n.getMonth()===d.getMonth()&&n.getDate()<d.getDate()))age--;
+  return age;
+}
+function renderTeacherProfileSelect(){
+  const sel=document.getElementById('tp-teacher-sel');if(!sel)return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">-- Select Teacher --</option>';
+  teacherList.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.display_name||'Teacher';sel.appendChild(o);});
+  if(cur)sel.value=cur;
+}
+async function loadTeacherProfile(teacherId){
+  tpPhoto=null;
+  document.getElementById('tp-photo-preview').style.display='none';
+  document.getElementById('tp-photo-hint').style.display='block';
+  document.getElementById('tp-gender').value='';document.getElementById('tp-dob').value='';
+  const v=document.getElementById('tp-view');
+  if(!teacherId){v.innerHTML='<div class="es">Select a teacher to view their profile.</div>';return;}
+  const{data:t}=await sb.from('inst_profiles').select('*').eq('id',teacherId).single();
+  if(!t){v.innerHTML='<div class="es">Teacher not found.</div>';return;}
+  document.getElementById('tp-gender').value=t.gender||'';
+  document.getElementById('tp-dob').value=t.date_of_birth||'';
+  const photoHtml=t.photo_url
+    ?`<img src="${E(t.photo_url)}" style="width:80px;height:80px;border-radius:10px;object-fit:cover;border:2px solid var(--b);">`
+    :`<div style="width:80px;height:80px;border-radius:10px;background:var(--bg);border:2px solid var(--b);display:flex;align-items:center;justify-content:center;font-size:1.7rem;">&#128100;</div>`;
+  const age=calcAge(t.date_of_birth);
+  v.innerHTML=`<div class="card" style="display:flex;gap:14px;align-items:flex-start;">
+    ${photoHtml}
+    <table><tbody>
+      <tr><td style="padding:3px 0;color:var(--g);width:90px;">Name</td><td><strong>${E(t.display_name||'—')}</strong></td></tr>
+      <tr><td style="padding:3px 0;color:var(--g);">Gender</td><td>${E(t.gender||'—')}</td></tr>
+      <tr><td style="padding:3px 0;color:var(--g);">Age</td><td>${age!=null?age+' years':'—'}</td></tr>
+    </tbody></table>
+  </div>`;
+}
+async function saveTeacherProfile(){
+  const teacherId=document.getElementById('tp-teacher-sel').value;
+  if(!teacherId){alert('Select a teacher first.');return;}
+  const gender=document.getElementById('tp-gender').value||null;
+  const dob=document.getElementById('tp-dob').value||null;
+  const upd={gender,date_of_birth:dob};
+  if(tpPhoto)upd.photo_url=tpPhoto;
+  L(true);
+  const{error}=await sb.from('inst_profiles').update(upd).eq('id',teacherId);
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  await loadTeacherProfile(teacherId);alert('Teacher profile saved!');
 }
 
 // ── TEACHER SCORES VIEW ───────────────────────────────────────
@@ -1917,7 +2202,7 @@ async function loadTeacherGradebook(){
   const rows=students.map(s=>{
     const sc2=scoreMap[s.id]||{};
     const gi=sc2.final_score!=null?gradeInfo(sc2.final_score):{g:'—',r:'—',c:'var(--g)'};
-    return `<tr>
+    return `<tr data-name="${E((s.full_name+' '+s.member_code).toLowerCase())}">
       <td>${E(s.full_name)}<br><span style="font-size:.7rem;color:var(--g);">${E(s.member_code)}</span></td>
       <td><input type="number" min="0" max="100" step="0.5" class="ip" style="width:68px;"
           data-mid="${s.id}" data-type="cs" value="${sc2.class_score!=null?sc2.class_score:''}" placeholder="0"
@@ -1934,6 +2219,7 @@ async function loadTeacherGradebook(){
     <th style="text-align:center;">Final</th><th style="text-align:center;">Grade</th><th>Remarks</th></tr></thead>
   <tbody>${rows.join('')}</tbody></table>
   <button class="btn bf ba" style="margin-top:10px;" onclick="saveAllScores()">&#128190; Save All Scores</button>`;
+  const tcs=document.getElementById('tc-search');if(tcs){tcs.style.display='block';tcs.value='';}
 }
 
 // ── POPULATE ts-class dropdown ────────────────────────────────
