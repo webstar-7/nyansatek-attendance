@@ -582,10 +582,27 @@ footer strong{color:var(--a);}
 
         <!-- TEACHERS -->
         <div class="tp" id="tp-ts">
+          <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Create New Teacher</h3>
+          <div class="admin-grid">
+            <div>
+              <div class="fg"><label>Full Name *</label><input type="text" id="nt-name" placeholder="e.g. Kwame Owusu"></div>
+              <div class="fg"><label>Email (used to log in) *</label><input type="email" id="nt-email" placeholder="teacher@example.com"></div>
+              <div class="fg"><label>Phone</label><input type="tel" id="nt-phone"></div>
+              <div class="fg"><label>Gender</label>
+                <select id="nt-gender"><option value="">-- Select --</option><option>Male</option><option>Female</option></select></div>
+              <div class="fg"><label>Date of Birth</label><input type="date" id="nt-dob"></div>
+              <button class="btn bf ba" id="nt-submit" onclick="createTeacherAccount()">Create Teacher</button>
+              <p class="hint">A temporary password will be shown once — the teacher must change it on first login.</p>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">New Login</h3>
+              <div id="nt-result"><div class="es">Fill in the form and click Create Teacher.</div></div>
+            </div>
+          </div>
+          <hr style="margin:18px 0;border-color:var(--b);">
           <div class="admin-grid">
             <div>
               <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Assign Subject to Teacher</h3>
-              <p class="hint">Teachers must already have a login created in Supabase with role = 'teacher'.</p>
               <div class="fg"><label>Teacher</label>
                 <select id="ts-teacher"><option value="">-- Select Teacher --</option></select></div>
               <div class="fg"><label>Class</label>
@@ -646,6 +663,35 @@ footer strong{color:var(--a);}
         <input type="text" id="tc-search" placeholder="Search student by name or code..." oninput="filterGbRows('tc-content',this.value)"
           style="width:100%;max-width:320px;padding:7px 9px;border:1px solid var(--b);border-radius:4px;font-size:.81rem;margin-bottom:10px;display:none;">
         <div id="tc-content"><div class="es">Select your term, class and subject above.</div></div>
+      </div>
+    </div>
+
+    <!-- PARENT VIEW -->
+    <div id="pv" class="view">
+      <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+          <div class="fg" style="margin:0;min-width:220px;"><label>Child</label>
+            <select id="p-child-sel" onchange="switchParentChild(this.value)"><option value="">-- Loading --</option></select></div>
+        </div>
+      </div>
+      <div id="p-no-children" class="es" style="display:none;">No children are linked to your account yet. Please contact the school office.</div>
+      <div id="p-child-wrap" style="display:none;">
+        <div id="ptbar" style="display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--b);margin-bottom:14px;">
+          <button class="tb on" onclick="swPTab('pov')">Overview</button>
+          <button class="tb" onclick="swPTab('pres')">Results</button>
+          <button class="tb" onclick="swPTab('pfee')">Fees</button>
+          <button class="tb" onclick="swPTab('patt')">Attendance</button>
+          <button class="tb" onclick="swPTab('pmore')">Prospectus &amp; Events</button>
+        </div>
+        <div class="tp on" id="tp-pov"><div class="es">Loading...</div></div>
+        <div class="tp" id="tp-pres"><div class="es">Loading...</div></div>
+        <div class="tp" id="tp-pfee"><div class="es">Loading...</div></div>
+        <div class="tp" id="tp-patt"><div class="es">Loading...</div></div>
+        <div class="tp" id="tp-pmore">
+          <div class="card"><h2>Prospectus, Events &amp; Messages</h2>
+            <p class="hint">This section is coming soon. Once available you'll be able to view the school prospectus, upcoming events, and message your child's teachers here.</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -746,7 +792,7 @@ async function boot2(){
   if(!p){L(false);scr('l');return;}
   prof=p;
   if(prof.must_change_password){L(false);scr('f');return;}
-  if(prof.role==='master')await initMaster();else await initInstitution();
+  if(prof.role==='master')await initMaster();else if(prof.role==='parent')await initParent();else await initInstitution();
   L(false);scr('a');
 }
 
@@ -768,6 +814,8 @@ function buildNav(role){
     ?[['gv','Gate'],['av','Admin']]
     :role==='teacher'
     ?[['gv','Gate'],['sv','My Scores']]
+    :role==='parent'
+    ?[['pv','My Children']]
     :[['gv','Gate']];
   tabs.forEach(([k,l],i)=>{
     const b=document.createElement('button');b.id='t-'+k;b.innerText=l;
@@ -1145,7 +1193,141 @@ async function loadStudentProfile(memberId){
       </div>
     </div>
     <button class="btn bsm ba" style="margin-top:14px;" onclick='printMemberID(${JSON.stringify(m)})'>&#127760; Print ID Card</button>
+  </div>
+  <div class="card" style="max-width:640px;margin-top:14px;">
+    <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Parent / Guardian Portal Accounts</h3>
+    <div id="sp-guardian-list"><div class="es">Loading...</div></div>
+    <hr style="margin:14px 0;border-color:var(--b);">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <h4 style="font-size:.8rem;margin-bottom:8px;color:var(--g);">Link Existing Parent</h4>
+        <div class="fg"><label>Search Parent</label>
+          <div class="sdrop">
+            <input type="text" id="gm-existing-search" placeholder="Type parent name or email..."
+              autocomplete="off" oninput="filterExistingParentSearch(this.value)">
+            <div class="sdlist" id="gm-existing-dlist"></div>
+          </div>
+        </div>
+        <input type="hidden" id="gm-existing-id">
+        <div class="fg"><label>Relationship</label>
+          <select id="gm-existing-rel"><option value="">-- Select --</option>
+            <option>Mother</option><option>Father</option><option>Guardian</option><option>Other</option></select></div>
+        <label style="font-size:.8rem;"><input type="checkbox" id="gm-existing-primary"> Primary contact</label><br>
+        <button class="btn bsm ba" style="margin-top:8px;" onclick="linkExistingParent()">Link Parent</button>
+      </div>
+      <div>
+        <h4 style="font-size:.8rem;margin-bottom:8px;color:var(--g);">Create New Parent Account</h4>
+        <div class="fg"><label>Full Name *</label><input type="text" id="gm-new-name"></div>
+        <div class="fg"><label>Email (used to log in) *</label><input type="email" id="gm-new-email"></div>
+        <div class="fg"><label>Phone</label><input type="tel" id="gm-new-phone"></div>
+        <div class="fg"><label>Relationship</label>
+          <select id="gm-new-rel"><option value="">-- Select --</option>
+            <option>Mother</option><option>Father</option><option>Guardian</option><option>Other</option></select></div>
+        <label style="font-size:.8rem;"><input type="checkbox" id="gm-new-primary" checked> Primary contact</label><br>
+        <button class="btn bsm ba" style="margin-top:8px;" id="gm-new-submit" onclick="createParentAccount()">Create &amp; Link</button>
+        <div id="gm-new-result" style="margin-top:8px;"></div>
+      </div>
+    </div>
   </div>`;
+  renderGuardiansPanel(memberId);
+}
+
+// ── PARENT / GUARDIAN ACCOUNTS (Student Profile tab) ────────────
+let spCurrentMemberId=null;
+let gmExistingList=[];
+
+async function renderGuardiansPanel(memberId){
+  spCurrentMemberId=memberId;
+  ensureExistingParentListLoaded();
+  const list=document.getElementById('sp-guardian-list');
+  const{data,error}=await sb.from('guardian_members')
+    .select('id,relationship,is_primary,inst_profiles(id,display_name,login_email,phone)')
+    .eq('member_id',memberId);
+  if(error){list.innerHTML='<div class="es" style="color:var(--d);">Could not load guardians.</div>';return;}
+  if(!data||!data.length){list.innerHTML='<div class="es">No parent/guardian accounts linked yet.</div>';return;}
+  list.innerHTML=data.map(g=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--b);">
+      <div>
+        <strong>${E(g.inst_profiles?.display_name||'—')}</strong> ${g.is_primary?'<span class="badge bg">Primary</span>':''}<br>
+        <span class="hint">${E(g.relationship||'—')} · ${E(g.inst_profiles?.login_email||'—')}${g.inst_profiles?.phone?' · '+E(g.inst_profiles.phone):''}</span>
+      </div>
+      <button class="btn bsm" style="color:var(--d);border-color:var(--d);" onclick="removeGuardianLink('${g.id}')">Remove</button>
+    </div>`).join('');
+}
+
+async function removeGuardianLink(linkId){
+  if(!confirm('Remove this parent/guardian link? This does not delete their login, only the connection to this student.'))return;
+  const{error}=await sb.from('guardian_members').delete().eq('id',linkId);
+  if(error){alert('Could not remove link: '+error.message);return;}
+  await renderGuardiansPanel(spCurrentMemberId);
+}
+
+async function ensureExistingParentListLoaded(force){
+  if(gmExistingList.length&&!force)return;
+  const{data}=await sb.from('inst_profiles').select('id,display_name,login_email')
+    .eq('institution_id',prof.institution_id).eq('role','parent').order('display_name');
+  gmExistingList=data||[];
+}
+
+function filterExistingParentSearch(val){
+  const dl=document.getElementById('gm-existing-dlist');
+  document.getElementById('gm-existing-id').value='';
+  if(!val||val.length<2){dl.innerHTML='';dl.style.display='none';return;}
+  const q=val.toLowerCase();
+  const matches=gmExistingList.filter(p=>(p.display_name||'').toLowerCase().includes(q)||(p.login_email||'').toLowerCase().includes(q)).slice(0,8);
+  dl.innerHTML=matches.length
+    ?matches.map(p=>`<div onclick='selectExistingParent(${JSON.stringify(p)})'>${E(p.display_name)} — ${E(p.login_email)}</div>`).join('')
+    :'<div class="es" style="padding:6px;">No matching parent account found. Use "Create New Parent Account" instead.</div>';
+  dl.style.display='block';
+}
+function selectExistingParent(p){
+  document.getElementById('gm-existing-search').value=p.display_name;
+  document.getElementById('gm-existing-id').value=p.id;
+  document.getElementById('gm-existing-dlist').style.display='none';
+}
+
+async function linkExistingParent(){
+  const guardianId=document.getElementById('gm-existing-id').value;
+  const rel=document.getElementById('gm-existing-rel').value;
+  const primary=document.getElementById('gm-existing-primary').checked;
+  if(!guardianId){alert('Search and select a parent account first.');return;}
+  const{error}=await sb.from('guardian_members').insert({
+    guardian_id:guardianId,member_id:spCurrentMemberId,relationship:rel||null,is_primary:primary});
+  if(error){alert('Could not link parent: '+error.message);return;}
+  document.getElementById('gm-existing-search').value='';document.getElementById('gm-existing-id').value='';
+  document.getElementById('gm-existing-rel').value='';document.getElementById('gm-existing-primary').checked=false;
+  await renderGuardiansPanel(spCurrentMemberId);
+}
+
+async function createParentAccount(){
+  const name=document.getElementById('gm-new-name').value.trim();
+  const email=document.getElementById('gm-new-email').value.trim();
+  const phone=document.getElementById('gm-new-phone').value.trim();
+  const rel=document.getElementById('gm-new-rel').value;
+  const primary=document.getElementById('gm-new-primary').checked;
+  const res=document.getElementById('gm-new-result');
+  if(!name||!email){res.innerHTML='<div class="es" style="color:var(--d);">Full name and email are required.</div>';return;}
+  const btn=document.getElementById('gm-new-submit');btn.disabled=true;btn.innerText='Creating...';
+  try{
+    const{data,error}=await sb.functions.invoke('admin-create-account',{body:{
+      role:'parent',full_name:name,email,phone:phone||null,
+      student_links:[{member_id:spCurrentMemberId,relationship:rel||null,is_primary:primary}]
+    }});
+    if(error||data?.error){throw new Error(data?.error||error.message||'Could not create parent account.');}
+    res.innerHTML=`<div style="padding:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+      <strong>${E(name)}</strong> can log in with:<br>
+      Email: <strong>${E(email)}</strong><br>
+      Temporary password: <strong style="font-size:1.05rem;letter-spacing:1px;">${E(data.temp_password)}</strong><br>
+      <span class="hint">${data.warning?E(data.warning):"They'll be asked to set a new password on first login. Save/share this now — it won't be shown again."}</span>
+    </div>`;
+    document.getElementById('gm-new-name').value='';document.getElementById('gm-new-email').value='';
+    document.getElementById('gm-new-phone').value='';document.getElementById('gm-new-rel').value='';
+    document.getElementById('gm-new-primary').checked=true;
+    await ensureExistingParentListLoaded(true); // so this new parent shows up next time admin searches "Link Existing Parent"
+    await renderGuardiansPanel(spCurrentMemberId);
+  }catch(err){
+    res.innerHTML=`<div class="es" style="color:var(--d);">${E(err.message)}</div>`;
+  }finally{btn.disabled=false;btn.innerText='Create & Link';}
 }
 
 // ── FEE TERMS ─────────────────────────────────────────────────
@@ -1322,6 +1504,150 @@ function swTab(tab){
   if(tab==='cl'){loadTeacherList().then(loadClasses);}
   if(tab==='pu'){loadTeacherList();}
   if(tab==='ts'){loadTeacherList().then(()=>{populateTsClassSel();loadTeacherAssignmentList();renderTeacherProfileSelect();});}
+}
+
+// ── PARENT PORTAL ─────────────────────────────────────────────
+let parentChildren=[],parentSelectedChildId=null;
+
+async function initParent(){
+  buildNav('parent');
+  const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+  institution=inst;
+  document.getElementById('hbiz').innerText=inst?.name||'Institution';
+  document.getElementById('fbiz').innerText=inst?.name||'Institution';
+  swV('pv');
+  await loadParentChildren();
+}
+
+async function loadParentChildren(){
+  // RLS scopes this to exactly the children linked via guardian_members — no extra filtering needed.
+  const{data}=await sb.from('members').select('*').order('full_name');
+  parentChildren=data||[];
+  const wrap=document.getElementById('p-child-wrap'),none=document.getElementById('p-no-children');
+  const sel=document.getElementById('p-child-sel');
+  if(!parentChildren.length){
+    wrap.style.display='none';none.style.display='block';sel.innerHTML='<option value="">-- None --</option>';return;
+  }
+  none.style.display='none';wrap.style.display='block';
+  sel.innerHTML=parentChildren.map(c=>`<option value="${c.id}">${E(c.full_name)}</option>`).join('');
+  parentSelectedChildId=parentChildren[0].id;
+  sel.value=parentSelectedChildId;
+  swPTab('pov');
+}
+
+function switchParentChild(id){
+  parentSelectedChildId=id;
+  swPTab('pov');
+}
+
+function swPTab(tab){
+  const order=['pov','pres','pfee','patt','pmore'];
+  order.forEach(t=>{const p=document.getElementById('tp-'+t);if(p)p.classList.toggle('on',t===tab);});
+  document.getElementById('ptbar').querySelectorAll('.tb').forEach((b,i)=>b.classList.toggle('on',order[i]===tab));
+  if(!parentSelectedChildId)return;
+  if(tab==='pov')renderParentOverview(parentSelectedChildId);
+  if(tab==='pres')renderParentResults(parentSelectedChildId);
+  if(tab==='pfee')renderParentFees(parentSelectedChildId);
+  if(tab==='patt')renderParentAttendance(parentSelectedChildId);
+}
+
+async function renderParentOverview(memberId){
+  const c=document.getElementById('tp-pov');
+  c.innerHTML='<div class="es">Loading...</div>';
+  const m=parentChildren.find(x=>x.id===memberId);
+  if(!m){c.innerHTML='<div class="es">Student not found.</div>';return;}
+  const classId=await getMemberClassId(memberId);
+  const{data:cls}=classId?await sb.from('school_classes').select('*').eq('id',classId).single():{data:null};
+  const fee=await checkFeeStatus(memberId);
+  const{count:presentCount}=await sb.from('attendance_logs').select('id',{count:'exact',head:true})
+    .eq('member_id',memberId).eq('status','allowed');
+  const photoHtml=m.photo_url
+    ?`<img src="${E(m.photo_url)}" style="width:96px;height:96px;border-radius:10px;object-fit:cover;border:2px solid var(--b);">`
+    :`<div style="width:96px;height:96px;border-radius:10px;background:var(--bg);border:2px solid var(--b);display:flex;align-items:center;justify-content:center;font-size:2rem;">&#128100;</div>`;
+  c.innerHTML=`<div class="card" style="max-width:640px;">
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      ${photoHtml}
+      <div style="flex:1;min-width:200px;">
+        <div style="font-size:1.05rem;font-weight:700;color:var(--p);">${E(m.full_name)}</div>
+        <div style="font-size:.78rem;color:var(--g);font-family:monospace;">${E(m.member_code)}</div>
+        <table style="margin-top:10px;width:100%;"><tbody>
+          <tr><td style="padding:3px 0;color:var(--g);width:140px;">Class</td><td>${E(cls?cls.class_name+' ('+cls.level+')':(m.class_or_dept||'—'))}</td></tr>
+          <tr><td style="padding:3px 0;color:var(--g);">Gender</td><td>${E(m.gender||'—')}</td></tr>
+          <tr><td style="padding:3px 0;color:var(--g);">Fees Balance</td><td style="font-weight:700;color:${fee.balance>0?'var(--d)':'var(--s)'};">${GH(fee.balance)}${fee.term?' ('+E(fee.term)+')':''}</td></tr>
+          <tr><td style="padding:3px 0;color:var(--g);">Days Present</td><td>${presentCount||0}</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function renderParentResults(memberId){
+  const c=document.getElementById('tp-pres');
+  const terms=academicTerms.length?academicTerms:(await sb.from('academic_terms').select('*').order('start_date',{ascending:false})).data||[];
+  academicTerms=terms;
+  if(!terms.length){c.innerHTML='<div class="es">No academic terms have been set up yet.</div>';return;}
+  const opts=terms.map(t=>`<option value="${t.id}">${E(t.term_name)}</option>`).join('');
+  c.innerHTML=`<div class="card">
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;">
+      <div class="fg" style="margin:0;flex:1;max-width:260px;"><label>Term</label>
+        <select id="pres-term" onchange="loadParentResultsForTerm()">${opts}</select></div>
+    </div>
+    <div id="pres-content"><div class="es">Loading...</div></div>
+  </div>`;
+  await loadParentResultsForTerm();
+}
+
+async function loadParentResultsForTerm(){
+  const termId=document.getElementById('pres-term').value;
+  const content=document.getElementById('pres-content');
+  if(!termId){content.innerHTML='<div class="es">Select a term.</div>';return;}
+  const{data:sc}=await sb.from('scores').select('*,subjects(subject_name)')
+    .eq('term_id',termId).eq('member_id',parentSelectedChildId);
+  if(!sc||!sc.length){content.innerHTML='<div class="es">No scores recorded for this term yet.</div>';return;}
+  const total=sc.reduce((s,x)=>s+(x.final_score||0),0);
+  const avg=total/sc.length;
+  content.innerHTML=`<table><thead><tr><th>Subject</th><th style="text-align:center;">Class Score</th>
+    <th style="text-align:center;">Exam Score</th><th style="text-align:center;">Final</th><th style="text-align:center;">Grade</th></tr></thead>
+    <tbody>${sc.sort((a,b)=>(a.subjects?.subject_name||'').localeCompare(b.subjects?.subject_name||'')).map(s=>{
+      const gi=gradeInfo(s.final_score||0);
+      return`<tr><td>${E(s.subjects?.subject_name||'—')}</td>
+        <td style="text-align:center;">${(s.class_score||0).toFixed(1)}</td>
+        <td style="text-align:center;">${(s.exam_score||0).toFixed(1)}</td>
+        <td style="text-align:center;font-weight:600;">${(s.final_score||0).toFixed(1)}</td>
+        <td style="text-align:center;color:${gi.c};font-weight:700;">${gi.g}</td></tr>`;
+    }).join('')}</tbody></table>
+    <p class="hint" style="margin-top:10px;">Average: <strong>${avg.toFixed(1)}</strong> across ${sc.length} subject(s).</p>`;
+}
+
+async function renderParentFees(memberId){
+  const c=document.getElementById('tp-pfee');
+  c.innerHTML='<div class="es">Loading...</div>';
+  const fee=await checkFeeStatus(memberId);
+  const{data:pays}=await sb.from('fee_payments').select('*,fee_terms(term_name)')
+    .eq('member_id',memberId).order('created_at',{ascending:false});
+  c.innerHTML=`<div class="card" style="max-width:640px;">
+    <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Current Balance</h3>
+    <div style="font-size:1.4rem;font-weight:700;color:${fee.balance>0?'var(--d)':'var(--s)'};">${GH(fee.balance)}</div>
+    <p class="hint">${fee.term?'For '+E(fee.term):'No active fee term found.'}</p>
+    <h3 style="font-size:.88rem;margin:16px 0 10px;color:var(--p);">Payment History</h3>
+    ${!pays||!pays.length?'<div class="es">No payments recorded yet.</div>':
+    `<table><thead><tr><th>Date</th><th>Term</th><th style="text-align:right;">Amount</th></tr></thead>
+     <tbody>${pays.map(p=>`<tr><td>${E(p.payment_date||'—')}</td>
+       <td>${E(p.fee_terms?.term_name||'—')}</td><td style="text-align:right;">${GH(p.amount_paid)}</td></tr>`).join('')}</tbody></table>`}
+  </div>`;
+}
+
+async function renderParentAttendance(memberId){
+  const c=document.getElementById('tp-patt');
+  c.innerHTML='<div class="es">Loading...</div>';
+  const{data:logs}=await sb.from('attendance_logs').select('*')
+    .eq('member_id',memberId).order('scanned_at',{ascending:false}).limit(30);
+  if(!logs||!logs.length){c.innerHTML='<div class="es">No attendance records yet.</div>';return;}
+  c.innerHTML=`<div class="card"><table><thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Status</th></tr></thead>
+    <tbody>${logs.map(l=>`<tr><td>${E(new Date(l.scanned_at).toLocaleDateString())}</td>
+      <td>${E(new Date(l.scanned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}))}</td>
+      <td style="text-transform:capitalize;">${E(l.event_type||'—')}</td>
+      <td style="color:${l.status==='allowed'?'var(--s)':'var(--d)'};font-weight:600;text-transform:capitalize;">${E(l.status||'—')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 // ── MASTER ────────────────────────────────────────────────────
@@ -2004,6 +2330,35 @@ async function saveAuthorizedPickup(){
   document.getElementById('pu-photo-hint').style.display='block';
   await loadPickupList(currentPickupMemberId);
   alert('Authorized pickup person saved!');
+}
+
+// ── CREATE TEACHER ACCOUNT ─────────────────────────────────────
+async function createTeacherAccount(){
+  const name=document.getElementById('nt-name').value.trim();
+  const email=document.getElementById('nt-email').value.trim();
+  const phone=document.getElementById('nt-phone').value.trim();
+  const gender=document.getElementById('nt-gender').value;
+  const dob=document.getElementById('nt-dob').value;
+  const res=document.getElementById('nt-result');
+  if(!name||!email){res.innerHTML='<div class="es" style="color:var(--r);">Full name and email are required.</div>';return;}
+  const btn=document.getElementById('nt-submit');btn.disabled=true;btn.innerText='Creating...';
+  try{
+    const{data,error}=await sb.functions.invoke('admin-create-account',{body:{
+      role:'teacher',full_name:name,email,phone:phone||null,gender:gender||null,date_of_birth:dob||null
+    }});
+    if(error||data?.error){throw new Error(data?.error||error.message||'Could not create teacher.');}
+    res.innerHTML=`<div style="padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+      <strong>${E(name)}</strong> can now log in with:<br>
+      Email: <strong>${E(email)}</strong><br>
+      Temporary password: <strong style="font-size:1.1rem;letter-spacing:1px;">${E(data.temp_password)}</strong><br>
+      <span class="hint">They'll be asked to set a new password on first login. Save/share this now — it won't be shown again.</span>
+    </div>`;
+    document.getElementById('nt-name').value='';document.getElementById('nt-email').value='';
+    document.getElementById('nt-phone').value='';document.getElementById('nt-gender').value='';document.getElementById('nt-dob').value='';
+    await loadTeacherList();renderTeacherProfileSelect();
+  }catch(err){
+    res.innerHTML=`<div class="es" style="color:var(--r);">${E(err.message)}</div>`;
+  }finally{btn.disabled=false;btn.innerText='Create Teacher';}
 }
 
 // ── TEACHER SUBJECT ASSIGNMENTS ───────────────────────────────
