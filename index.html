@@ -158,8 +158,8 @@ footer strong{color:var(--a);}
     <p class="sub">Sign in to your institution</p>
     <div class="aerr" id="le"></div>
     <form id="lf">
-      <div class="fg"><label>Institution Name</label>
-        <input type="text" id="lb" placeholder="e.g. GHANA INTERNATIONAL SCHOOL" required></div>
+      <div class="fg"><label>Email</label>
+        <input type="email" id="lb" placeholder="you@example.com" required></div>
       <div class="fg"><label>Password</label>
         <input type="password" id="lp" required></div>
       <button type="submit" class="btn ba bf" id="lbtn">Sign In</button>
@@ -756,13 +756,11 @@ function startClock(){
 document.getElementById('lf').addEventListener('submit',async e=>{
   e.preventDefault();
   const eb=document.getElementById('le');eb.classList.remove('on');
-  const biz=document.getElementById('lb').value.trim(),pw=document.getElementById('lp').value;
+  const email=document.getElementById('lb').value.trim(),pw=document.getElementById('lp').value;
   const btn=document.getElementById('lbtn');btn.disabled=true;btn.innerText='Signing in...';
   try{
-    const{data:loginEmail,error:le}=await sb.rpc('lookup_login_email',{p_institution_name:biz});
-    if(le||!loginEmail)throw new Error('Institution name or password is incorrect.');
-    const{error:ae}=await sb.auth.signInWithPassword({email:loginEmail,password:pw});
-    if(ae)throw new Error('Institution name or password is incorrect.');
+    const{error:ae}=await sb.auth.signInWithPassword({email,password:pw});
+    if(ae)throw new Error('Email or password is incorrect.');
     await boot2();
   }catch(err){eb.innerText=err.message;eb.classList.add('on');}
   finally{btn.disabled=false;btn.innerText='Sign In';}
