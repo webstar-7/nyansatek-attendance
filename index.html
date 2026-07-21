@@ -600,6 +600,13 @@ footer strong{color:var(--a);}
             </div>
           </div>
           <hr style="margin:18px 0;border-color:var(--b);">
+          <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Teacher Accounts</h3>
+          <p class="hint" style="margin-bottom:8px;">Deactivating blocks their login immediately and removes them from
+            "assign subject / class teacher" pickers. It does not delete their record — past scores, attendance
+            entries, and assignments still show their name.</p>
+          <button class="btn bsm" onclick="loadTeacherAccountsList()">Refresh</button>
+          <div id="ta-list" style="margin-top:8px;"><div class="es">Click Refresh to load.</div></div>
+          <hr style="margin:18px 0;border-color:var(--b);">
           <div class="admin-grid">
             <div>
               <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Assign Subject to Teacher</h3>
@@ -1501,7 +1508,7 @@ function swTab(tab){
   if(tab==='at'){loadAcademicTerms();}
   if(tab==='cl'){loadTeacherList().then(loadClasses);}
   if(tab==='pu'){loadTeacherList();}
-  if(tab==='ts'){loadTeacherList().then(()=>{populateTsClassSel();loadTeacherAssignmentList();renderTeacherProfileSelect();});}
+  if(tab==='ts'){loadTeacherList().then(()=>{populateTsClassSel();loadTeacherAssignmentList();renderTeacherProfileSelect();});loadTeacherAccountsList();}
 }
 
 // ── PARENT PORTAL ─────────────────────────────────────────────
@@ -2353,10 +2360,46 @@ async function createTeacherAccount(){
     </div>`;
     document.getElementById('nt-name').value='';document.getElementById('nt-email').value='';
     document.getElementById('nt-phone').value='';document.getElementById('nt-gender').value='';document.getElementById('nt-dob').value='';
-    await loadTeacherList();renderTeacherProfileSelect();
+    await loadTeacherList();renderTeacherProfileSelect();await loadTeacherAccountsList();
   }catch(err){
     res.innerHTML=`<div class="es" style="color:var(--r);">${E(err.message)}</div>`;
   }finally{btn.disabled=false;btn.innerText='Create Teacher';}
+}
+
+// ── TEACHER ACCOUNTS: list + deactivate/reactivate ─────────────
+async function loadTeacherAccountsList(){
+  const c=document.getElementById('ta-list');if(!c)return;
+  if(!prof?.institution_id)return;
+  const{data,error}=await sb.from('inst_profiles').select('*')
+    .eq('institution_id',prof.institution_id).eq('role','teacher').order('display_name');
+  if(error){c.innerHTML=`<div class="es" style="color:var(--r);">${E(error.message)}</div>`;return;}
+  if(!data||!data.length){c.innerHTML='<div class="es">No teacher accounts yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead>
+  <tbody>${data.map(t=>`<tr>
+    <td><strong>${E(t.display_name||t.full_name||'—')}</strong></td>
+    <td>${E(t.login_email||t.email||'—')}</td>
+    <td><span class="badge ${t.is_active?'bg':'br'}">${t.is_active?'Active':'Deactivated'}</span></td>
+    <td>${t.is_active
+      ?`<button class="btn bsm" style="color:var(--d);border-color:var(--d);" onclick="setTeacherStatus('${t.id}','deactivate','${E(t.display_name||t.full_name||'this teacher')}')">Deactivate</button>`
+      :`<button class="btn bsm" style="color:var(--s);border-color:var(--s);" onclick="setTeacherStatus('${t.id}','reactivate','${E(t.display_name||t.full_name||'this teacher')}')">Reactivate</button>`}
+    </td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function setTeacherStatus(id,action,name){
+  const verb=action==='deactivate'?'Deactivate':'Reactivate';
+  const warn=action==='deactivate'
+    ?` They will be logged out immediately and won't be able to sign in. Past scores, attendance, and assignments stay unchanged.`
+    :` They will be able to sign in again.`;
+  if(!confirm(`${verb} ${name}?${warn}`))return;
+  L(true);
+  try{
+    const{data,error}=await sb.functions.invoke('admin-set-account-status',{body:{target_id:id,action}});
+    if(error||data?.error)throw new Error(data?.error||error.message||`Could not ${action} account.`);
+    await loadTeacherAccountsList();await loadTeacherList();renderTeacherProfileSelect();
+  }catch(err){
+    alert('Error: '+err.message);
+  }finally{L(false);}
 }
 
 // ── TEACHER SUBJECT ASSIGNMENTS ───────────────────────────────
@@ -2364,7 +2407,7 @@ let teacherList=[];
 async function loadTeacherList(){
   if(!prof?.institution_id)return;
   const{data}=await sb.from('inst_profiles').select('*')
-    .eq('institution_id',prof.institution_id).eq('role','teacher');
+    .eq('institution_id',prof.institution_id).eq('role','teacher').eq('is_active',true);
   teacherList=data||[];
   const sel=document.getElementById('ts-teacher');
   if(sel){
