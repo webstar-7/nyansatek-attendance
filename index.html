@@ -1246,7 +1246,7 @@ async function renderGuardiansPanel(memberId){
   ensureExistingParentListLoaded();
   const list=document.getElementById('sp-guardian-list');
   const{data,error}=await sb.from('guardian_members')
-    .select('id,relationship,is_primary,inst_profiles(id,display_name,login_email,phone)')
+    .select('id,relationship,is_primary,inst_profiles(id,display_name,email,phone)')
     .eq('member_id',memberId);
   if(error){list.innerHTML='<div class="es" style="color:var(--d);">Could not load guardians.</div>';return;}
   if(!data||!data.length){list.innerHTML='<div class="es">No parent/guardian accounts linked yet.</div>';return;}
@@ -1254,7 +1254,7 @@ async function renderGuardiansPanel(memberId){
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--b);">
       <div>
         <strong>${E(g.inst_profiles?.display_name||'—')}</strong> ${g.is_primary?'<span class="badge bg">Primary</span>':''}<br>
-        <span class="hint">${E(g.relationship||'—')} · ${E(g.inst_profiles?.login_email||'—')}${g.inst_profiles?.phone?' · '+E(g.inst_profiles.phone):''}</span>
+        <span class="hint">${E(g.relationship||'—')} · ${E(g.inst_profiles?.email||'—')}${g.inst_profiles?.phone?' · '+E(g.inst_profiles.phone):''}</span>
       </div>
       <button class="btn bsm" style="color:var(--d);border-color:var(--d);" onclick="removeGuardianLink('${g.id}')">Remove</button>
     </div>`).join('');
@@ -1269,7 +1269,7 @@ async function removeGuardianLink(linkId){
 
 async function ensureExistingParentListLoaded(force){
   if(gmExistingList.length&&!force)return;
-  const{data}=await sb.from('inst_profiles').select('id,display_name,login_email')
+  const{data}=await sb.from('inst_profiles').select('id,display_name,email')
     .eq('institution_id',prof.institution_id).eq('role','parent').order('display_name');
   gmExistingList=data||[];
 }
@@ -1279,9 +1279,9 @@ function filterExistingParentSearch(val){
   document.getElementById('gm-existing-id').value='';
   if(!val||val.length<2){dl.innerHTML='';dl.style.display='none';return;}
   const q=val.toLowerCase();
-  const matches=gmExistingList.filter(p=>(p.display_name||'').toLowerCase().includes(q)||(p.login_email||'').toLowerCase().includes(q)).slice(0,8);
+  const matches=gmExistingList.filter(p=>(p.display_name||'').toLowerCase().includes(q)||(p.email||'').toLowerCase().includes(q)).slice(0,8);
   dl.innerHTML=matches.length
-    ?matches.map(p=>`<div onclick='selectExistingParent(${JSON.stringify(p)})'>${E(p.display_name)} — ${E(p.login_email)}</div>`).join('')
+    ?matches.map(p=>`<div onclick='selectExistingParent(${JSON.stringify(p)})'>${E(p.display_name)} — ${E(p.email)}</div>`).join('')
     :'<div class="es" style="padding:6px;">No matching parent account found. Use "Create New Parent Account" instead.</div>';
   dl.style.display='block';
 }
