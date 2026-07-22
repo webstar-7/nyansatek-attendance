@@ -530,6 +530,12 @@ footer strong{color:var(--a);}
 
         <!-- REPORTS (structured, downloadable-PDF queries) -->
         <div class="tp" id="tp-rp">
+          <div class="card" style="margin-bottom:14px;border:1px solid var(--d);">
+            <h2 style="color:var(--d);">&#9888; One-Time ID Renumbering</h2>
+            <p class="hint" style="margin-bottom:10px;">Reassigns <strong>every</strong> existing student, teacher, and pickup person to a fresh, consistent <code>{PREFIX}_S/T/P_0001</code>-style ID, in the order they were registered. Use this once, before you start printing ID cards — it will change any codes already recorded elsewhere (gate scan sheets, exported lists, etc.), so don't run it after cards are in circulation.</p>
+            <button class="btn" style="background:var(--d);" onclick="renumberAllIDs()">Renumber Everyone Now</button>
+          </div>
+
           <p class="hint" style="margin-bottom:14px;">Pick a report below, choose the options, then generate a downloadable PDF.</p>
 
           <div class="card" style="margin-bottom:14px;">
@@ -781,6 +787,7 @@ footer strong{color:var(--a);}
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const E=s=>!s?'':String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const GH=n=>'GH\u20B5'+(n||0).toFixed(2);
+const GHP=n=>'GHS '+(n||0).toFixed(2); // PDF/SMS-safe — jsPDF core fonts & GSM-7 SMS don't support the ₵ glyph
 
 // ── AUTO ID NUMBER GENERATOR ────────────────────────────────────
 // Format: {SCHOOL INITIALS}_{S|T|P}_{0001}, e.g. Olivako International
@@ -1050,7 +1057,7 @@ function buildNotifMsg(member,allowed,balance,feeDisplay){
   const time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   const date=new Date().toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
   if(!allowed){
-    return `URGENT - ${inst}: ${member.full_name} was DENIED entry at ${time} on ${date} due to outstanding fees of ${GH(balance||0)}. Please report to the school office immediately. - NYANSATEK`;
+    return `URGENT - ${inst}: ${member.full_name} was DENIED entry at ${time} on ${date} due to outstanding fees of ${GHP(balance||0)}. Please report to the school office immediately. - NYANSATEK`;
   }
   if(scanMode==='exit'){
     return `${inst}: ${member.full_name} left the premises at ${time} on ${date}. - NYANSATEK`;
@@ -2112,6 +2119,58 @@ function printAllRC(students,n){
   const pages=students.map(s=>buildRCHtml(s,s.scores,cls,term,n,true,s.daysPresent||0)).join('<div style="page-break-after:always;"></div>');
   printIF(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:A4;margin:12mm 15mm;}body{margin:0;font-family:Arial,sans-serif;}</style></head><body>${pages}</body></html>`);
 }
+// ── ONE-TIME BULK ID RENUMBERING ─────────────────────────────────
+async function renumberAllIDs(){
+  if(!confirm('This will permanently reassign ID numbers for EVERY student, teacher, and pickup person in your school, in registration order, using the '+schoolInitials()+'_S/T/P_0001 scheme. This cannot be undone automatically. Continue?'))return;
+  if(!confirm('Final check: make sure no ID cards have been printed or issued yet, since old codes will stop matching. Proceed with renumbering everyone now?'))return;
+  L(true);
+  const prefix=schoolInitials();
+  const report={students:{ok:0,fail:0},teachers:{ok:0,fail:0},pickups:{ok:0,fail:0},missingColumns:[]};
+  try{
+    // Students
+    const{data:stu}=await sb.from('members').select('id,created_at').eq('institution_id',prof.institution_id).order('created_at',{ascending:true});
+    let n=1;
+    for(const s of (stu||[])){
+      const code=prefix+'_S_'+String(n).padStart(4,'0');
+      const{error}=await sb.from('members').update({member_code:code}).eq('id',s.id);
+      if(error)report.students.fail++;else report.students.ok++;
+      n++;
+    }
+    // Teachers
+    const{data:tch}=await sb.from('inst_profiles').select('id,created_at').eq('institution_id',prof.institution_id).eq('role','teacher').order('created_at',{ascending:true});
+    n=1;let staffColMissing=false;
+    for(const t of (tch||[])){
+      const code=prefix+'_T_'+String(n).padStart(4,'0');
+      const{error}=await sb.from('inst_profiles').update({staff_code:code}).eq('id',t.id);
+      if(error){report.teachers.fail++;if(/staff_code/i.test(error.message||''))staffColMissing=true;}else report.teachers.ok++;
+      n++;
+    }
+    if(staffColMissing)report.missingColumns.push('inst_profiles.staff_code');
+    // Pickup persons
+    const{data:pu}=await sb.from('authorized_pickups').select('id,created_at').eq('institution_id',prof.institution_id).order('created_at',{ascending:true});
+    n=1;let pickupColMissing=false;
+    for(const p of (pu||[])){
+      const code=prefix+'_P_'+String(n).padStart(4,'0');
+      const{error}=await sb.from('authorized_pickups').update({pickup_code:code}).eq('id',p.id);
+      if(error){report.pickups.fail++;if(/pickup_code/i.test(error.message||''))pickupColMissing=true;}else report.pickups.ok++;
+      n++;
+    }
+    if(pickupColMissing)report.missingColumns.push('authorized_pickups.pickup_code');
+  }catch(e){
+    L(false);
+    alert('Renumbering stopped early due to an error: '+e.message);
+    return;
+  }
+  L(false);
+  await loadMembers();await loadTeacherAccountsList();
+  let msg='Renumbering complete.\n'
+    +'Students: '+report.students.ok+' updated'+(report.students.fail?', '+report.students.fail+' failed':'')+'\n'
+    +'Teachers: '+report.teachers.ok+' updated'+(report.teachers.fail?', '+report.teachers.fail+' failed':'')+'\n'
+    +'Pickup persons: '+report.pickups.ok+' updated'+(report.pickups.fail?', '+report.pickups.fail+' failed':'');
+  if(report.missingColumns.length)msg+='\n\nNote: these columns are missing from your database, so those records could not be renumbered: '+report.missingColumns.join(', ')+'. Run the ALTER TABLE SQL shared earlier, then click this button again.';
+  alert(msg);
+}
+
 // ── REPORTS: CLASS PERFORMANCE RANKING (PDF) ────────────────────
 let rpRankData=[],rpRankCls=null,rpRankTerm=null;
 async function generateRankingReport(){
@@ -2273,8 +2332,8 @@ function downloadFeeDefaultersPDF(){
   doc.setFontSize(11);doc.text('Fee Defaulters — '+(rpFeeTerm?.term_name||''),14,24);
   doc.setFontSize(9);doc.setTextColor(120);doc.text('Generated '+new Date().toLocaleDateString(),14,30);
   doc.autoTable({startY:36,
-    head:[['Student','Code','Class','Guardian Phone','Balance']],
-    body:sel.map(m=>[m.full_name,m.member_code,m.class_or_dept||'—',m.guardian_phone||'—',GH(m.balance)]),
+    head:[['Student','Code','Class','Guardian Phone','Balance (GHS)']],
+    body:sel.map(m=>[m.full_name,m.member_code,m.class_or_dept||'—',m.guardian_phone||'—',(m.balance||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})]),
     headStyles:{fillColor:[17,24,39]},styles:{fontSize:9}
   });
   doc.save('fee-defaulters-'+(rpFeeTerm?.term_name||'term').replace(/\s+/g,'-')+'.pdf');
@@ -2287,7 +2346,7 @@ async function sendFeeReminderSMS(){
   L(true);
   let sent=0,failed=0;
   for(const m of sel){
-    const msg=`Dear Parent, this is a gentle reminder from ${inst} that ${m.full_name} has an outstanding fee balance of ${GH(m.balance)} for ${rpFeeTerm.term_name}. Kindly settle at your earliest convenience. Thank you.`;
+    const msg=`Dear Parent, this is a gentle reminder from ${inst} that ${m.full_name} has an outstanding fee balance of ${GHP(m.balance)} for ${rpFeeTerm.term_name}. Kindly settle at your earliest convenience. Thank you.`;
     try{
       if(SMS_API_KEY)await fetch('https://sms.arkesel.com/sms/api?action=send-sms&api_key='+encodeURIComponent(SMS_API_KEY)+'&to='+encodeURIComponent(m.guardian_phone)+'&from='+encodeURIComponent(SMS_SENDER_ID)+'&sms='+encodeURIComponent(msg));
       await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg});
