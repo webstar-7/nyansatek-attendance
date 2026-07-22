@@ -12,7 +12,8 @@ const SMS_SENDER_ID     = "NYANSATEK";
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{--p:#111827;--a:#d4af37;--bg:#f3f4f6;--b:#e5e7eb;--g:#9ca3af;--s:#10b981;--d:#ef4444;--t:#1f2937;--bl:#2563eb;}
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif;}
@@ -281,6 +282,7 @@ footer strong{color:var(--a);}
           <button class="tb" onclick="swTab('cl')">&#127979; Classes</button>
           <button class="tb" onclick="swTab('gb')">&#128221; Gradebook</button>
           <button class="tb" onclick="swTab('rc')">&#128203; Report Cards</button>
+          <button class="tb" onclick="swTab('rp')">&#128196; Reports</button>
           <button class="tb" onclick="swTab('bs')">&#128241; Bulk SMS</button>
           <button class="tb" onclick="swTab('pu')">&#128118; Pickups</button>
           <button class="tb" onclick="swTab('ts')">&#128104;&#8205;&#127979; Teachers</button>
@@ -298,8 +300,8 @@ footer strong{color:var(--a);}
               </div>
               <input type="file" id="mb-photo-file" accept="image/*" capture="user" style="display:none;">
               <div class="fg"><label>Full Name *</label><input type="text" id="mb-name"></div>
-              <div class="fg"><label>Member Code (ID card / QR value) *</label>
-                <input type="text" id="mb-code" placeholder="e.g. STU-001 or 2026001"></div>
+              <div class="fg"><label>ID Number</label>
+                <input type="text" id="mb-code" placeholder="Auto-generated on save (e.g. OIS_S_0001)" disabled></div>
               <div class="fg"><label>Class / Department</label>
                 <input type="text" id="mb-dept" placeholder="e.g. JHS 2A or Finance"></div>
               <div class="fg"><label>Gender</label>
@@ -526,6 +528,52 @@ footer strong{color:var(--a);}
           <div id="rc-content"><div class="es">Select term and class, then click Generate.</div></div>
         </div>
 
+        <!-- REPORTS (structured, downloadable-PDF queries) -->
+        <div class="tp" id="tp-rp">
+          <p class="hint" style="margin-bottom:14px;">Pick a report below, choose the options, then generate a downloadable PDF.</p>
+
+          <div class="card" style="margin-bottom:14px;">
+            <h2>&#127942; Class Performance Ranking</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+              <div class="fg" style="margin:0;flex:1;"><label>Term</label>
+                <select id="rp-term"><option value="">-- Select Term --</option></select></div>
+              <div class="fg" style="margin:0;flex:1;"><label>Class</label>
+                <select id="rp-class"><option value="">-- Select Class --</option></select></div>
+              <button class="btn ba" onclick="generateRankingReport()">Generate</button>
+            </div>
+            <div id="rp-rank-content"><div class="es">Select term and class, then click Generate.</div></div>
+          </div>
+
+          <div class="card" style="margin-bottom:14px;">
+            <h2>&#128196; Roster (Alphabetical)</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+              <div class="fg" style="margin:0;flex:1;"><label>Roster Type</label>
+                <select id="rp-roster-type" onchange="toggleRosterClassSel()">
+                  <option value="students">Students (by class)</option>
+                  <option value="teachers">Teachers (all)</option>
+                  <option value="pickups">Authorized Pickup Persons (all)</option>
+                </select></div>
+              <div class="fg" style="margin:0;flex:1;" id="rp-roster-class-wrap"><label>Class</label>
+                <select id="rp-roster-class"><option value="">-- Select Class --</option></select></div>
+              <button class="btn ba" onclick="generateRoster()">Generate</button>
+            </div>
+            <div id="rp-roster-content"><div class="es">Choose a roster type, then click Generate.</div></div>
+          </div>
+
+          <div class="card">
+            <h2>&#128176; Fee Defaulters &amp; SMS Reminder</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+              <div class="fg" style="margin:0;flex:1;"><label>Fee Term *</label>
+                <select id="rp-fterm"><option value="">-- Select Fee Term --</option></select></div>
+              <div class="fg" style="margin:0;flex:1;"><label>Class (optional)</label>
+                <select id="rp-fclass"><option value="">All Classes</option></select></div>
+              <button class="btn ba" onclick="loadFeeDefaulters()">Generate</button>
+            </div>
+            <p class="hint" style="margin-bottom:8px;" id="rp-fee-hint">Untick anyone you don't want to include before sending or downloading.</p>
+            <div id="rp-fee-content"><div class="es">Select a fee term, then click Generate.</div></div>
+          </div>
+        </div>
+
         <!-- BULK SMS -->
         <div class="tp" id="tp-bs">
           <div style="max-width:560px;">
@@ -733,6 +781,29 @@ footer strong{color:var(--a);}
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const E=s=>!s?'':String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const GH=n=>'GH\u20B5'+(n||0).toFixed(2);
+
+// ── AUTO ID NUMBER GENERATOR ────────────────────────────────────
+// Format: {SCHOOL INITIALS}_{S|T|P}_{0001}, e.g. Olivako International
+// School -> OIS_S_0001, OIS_T_0001, OIS_P_0001. Sequence is scoped per
+// institution + type and derived by scanning existing codes, since this
+// app has no server-side counter.
+function schoolInitials(){
+  const name=(institution?.name||'SCH').trim();
+  const initials=name.split(/\s+/).map(w=>w.replace(/[^A-Za-z]/g,'')).filter(Boolean).map(w=>w[0].toUpperCase()).join('');
+  return initials||'SCH';
+}
+async function nextCode(type,table,column){
+  const prefix=schoolInitials()+'_'+type+'_';
+  const{data}=await sb.from(table).select(column).eq('institution_id',prof.institution_id).ilike(column,prefix+'%');
+  let max=0;
+  const re=new RegExp('^'+prefix+'(\\d{4,})$','i');
+  (data||[]).forEach(r=>{
+    const v=r[column];if(!v)return;
+    const m=String(v).match(re);
+    if(m){const n=parseInt(m[1],10);if(n>max)max=n;}
+  });
+  return prefix+String(max+1).padStart(4,'0');
+}
 const td=()=>new Date().toISOString().split('T')[0];
 const fmt=dt=>new Date(dt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 
@@ -1092,27 +1163,31 @@ function filterMembers(val){
 
 async function saveMember(){
   const name=document.getElementById('mb-name').value.trim();
-  const code=document.getElementById('mb-code').value.trim();
   const dept=document.getElementById('mb-dept').value.trim();
   const gender=document.getElementById('mb-gender').value;
   const gname=document.getElementById('mb-gname').value.trim();
   const gphone=document.getElementById('mb-gphone').value.trim();
   const ne=document.getElementById('mb-nentry').checked;
   const nx=document.getElementById('mb-nexit').checked;
-  if(!name||!code){alert('Full name and Member Code are required.');return;}
+  if(!name){alert('Full name is required.');return;}
   L(true);
-  const{error}=await sb.from('members').insert({
-    institution_id:prof.institution_id,
-    member_code:code,full_name:name,class_or_dept:dept||null,gender:gender||null,
-    guardian_name:gname||null,guardian_phone:gphone||null,
-    notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null
-  });
+  let code='',error,attempts=0;
+  do{
+    code=await nextCode('S','members','member_code');
+    ({error}=await sb.from('members').insert({
+      institution_id:prof.institution_id,
+      member_code:code,full_name:name,class_or_dept:dept||null,gender:gender||null,
+      guardian_name:gname||null,guardian_phone:gphone||null,
+      notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null
+    }));
+    attempts++;
+  }while(error&&/duplicate|unique/i.test(error.message||'')&&attempts<4);
   L(false);
   if(error){alert('Error: '+error.message);return;}
-  ['mb-name','mb-code','mb-dept','mb-gname','mb-gphone'].forEach(id=>document.getElementById(id).value='');
+  ['mb-name','mb-dept','mb-gname','mb-gphone'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('mb-gender').value='';
   mbPhoto=null;document.getElementById('mb-photo-preview').style.display='none';document.getElementById('mb-photo-hint').style.display='block';
-  await loadMembers();alert('Member registered!');
+  await loadMembers();alert('Member registered! ID Number: '+code);
 }
 
 function filterMemberSearch(val){
@@ -1344,6 +1419,12 @@ async function loadFeeTerms(){
   const sel=document.getElementById('fp-term');
   sel.innerHTML='<option value="">-- Select Term --</option>';
   feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name+(t.class_id?' — '+(classes.find(c=>c.id===t.class_id)?.class_name||'class'):' (All Classes)');sel.appendChild(o);});
+  const rpSel=document.getElementById('rp-fterm');
+  if(rpSel){
+    rpSel.innerHTML='<option value="">-- Select Fee Term --</option>';
+    feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name+(t.class_id?' — '+(classes.find(c=>c.id===t.class_id)?.class_name||'class'):' (All Classes)');rpSel.appendChild(o);});
+  }
+  if(!SMS_API_KEY){const h=document.getElementById('rp-fee-hint');if(h)h.innerHTML='&#9888; SMS_API_KEY not set — reminders will be logged only, not actually sent. Untick anyone you don\'t want to include before sending or downloading.';}
   const csel=document.getElementById('ft-class');
   if(csel){
     const cur=csel.value;
@@ -1496,7 +1577,7 @@ async function loadNotifHistory(){
 
 // ── ADMIN TABS ────────────────────────────────────────────────
 function swTab(tab){
-  const order=['mb','sp','ft','fp','ar','nl','at','cl','gb','rc','bs','pu','ts'];
+  const order=['mb','sp','ft','fp','ar','nl','at','cl','gb','rc','rp','bs','pu','ts'];
   order.forEach(t=>{
     const p=document.getElementById('tp-'+t);if(p)p.classList.toggle('on',t===tab);
   });
@@ -1507,6 +1588,7 @@ function swTab(tab){
   if(tab==='nl')loadNotifHistory();
   if(tab==='at'){loadAcademicTerms();}
   if(tab==='cl'){loadTeacherList().then(loadClasses);}
+  if(tab==='rp'){loadFeeTerms();}
   if(tab==='pu'){loadTeacherList();}
   if(tab==='ts'){loadTeacherList().then(()=>{populateTsClassSel();loadTeacherAssignmentList();renderTeacherProfileSelect();});loadTeacherAccountsList();}
 }
@@ -1735,7 +1817,7 @@ async function loadAcademicTerms(){
     .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
   academicTerms=data||[];
   renderAcademicTermList();
-  ['gb-term','rc-term','enr-term'].forEach(id=>{
+  ['gb-term','rc-term','enr-term','rp-term'].forEach(id=>{
     const sel=document.getElementById(id);if(!sel)return;
     sel.innerHTML='<option value="">-- Select Term --</option>';
     academicTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name+' ('+t.academic_year+')';sel.appendChild(o);});
@@ -1772,10 +1854,10 @@ async function loadClasses(){
   const{data}=await sb.from('school_classes').select('*').eq('institution_id',prof.institution_id).order('class_name');
   classes=data||[];
   renderClassList2();
-  ['subj-class','enr-class','gb-class','rc-class','bs-class'].forEach(id=>{
+  ['subj-class','enr-class','gb-class','rc-class','bs-class','rp-class','rp-roster-class','rp-fclass'].forEach(id=>{
     const sel=document.getElementById(id);if(!sel)return;
     const cur=sel.value;
-    sel.innerHTML=id==='bs-class'?'<option value="">All Classes</option>':'<option value="">-- Select Class --</option>';
+    sel.innerHTML=(id==='bs-class'||id==='rp-fclass')?'<option value="">All Classes</option>':'<option value="">-- Select Class --</option>';
     classes.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.text=c.class_name+' ('+c.level+')';sel.appendChild(o);});
     if(cur)sel.value=cur;
   });
@@ -2030,6 +2112,192 @@ function printAllRC(students,n){
   const pages=students.map(s=>buildRCHtml(s,s.scores,cls,term,n,true,s.daysPresent||0)).join('<div style="page-break-after:always;"></div>');
   printIF(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:A4;margin:12mm 15mm;}body{margin:0;font-family:Arial,sans-serif;}</style></head><body>${pages}</body></html>`);
 }
+// ── REPORTS: CLASS PERFORMANCE RANKING (PDF) ────────────────────
+let rpRankData=[],rpRankCls=null,rpRankTerm=null;
+async function generateRankingReport(){
+  const termId=document.getElementById('rp-term').value;
+  const classId=document.getElementById('rp-class').value;
+  if(!termId||!classId){alert('Select a term and class.');return;}
+  L(true);
+  const term=academicTerms.find(t=>t.id===termId);
+  const[{data:enr},{data:sc}]=await Promise.all([
+    sb.from('class_enrollments').select('*,members(id,full_name,member_code)').eq('class_id',classId),
+    sb.from('scores').select('*').eq('term_id',termId).eq('class_id',classId)
+  ]);
+  L(false);
+  const students=(enr||[]).map(e=>e.members).filter(Boolean);
+  if(!students.length){document.getElementById('rp-rank-content').innerHTML='<div class="es">No students enrolled in this class.</div>';return;}
+  const studentData=students.map(s=>{
+    const myScores=(sc||[]).filter(x=>x.member_id===s.id);
+    const total=myScores.reduce((sum,x)=>sum+(x.final_score||0),0);
+    const avg=myScores.length?total/myScores.length:0;
+    return{...s,total,avg,subjectCount:myScores.length};
+  }).sort((a,b)=>b.total-a.total);
+  studentData.forEach((s,i)=>s.position=i+1);
+  rpRankData=studentData;rpRankCls=classes.find(c=>c.id===classId);rpRankTerm=term;
+  const n=studentData.length;
+  document.getElementById('rp-rank-content').innerHTML=`
+  <p class="hint">Ranked by total marks across all subjects. ${n} students — ${E(rpRankCls?.class_name||'')} — ${E(term?.term_name||'')}</p>
+  <table><thead><tr><th style="text-align:center;">Pos.</th><th>Student</th><th style="text-align:center;">Subjects</th>
+    <th style="text-align:right;">Total</th><th style="text-align:right;">Average</th></tr></thead>
+  <tbody>${studentData.map(s=>`<tr>
+    <td style="font-weight:700;text-align:center;">${ordinal(s.position)}</td>
+    <td><strong>${E(s.full_name)}</strong><br><span style="font-size:.7rem;color:var(--g);">${E(s.member_code)}</span></td>
+    <td style="text-align:center;">${s.subjectCount}</td>
+    <td style="text-align:right;font-weight:600;">${s.total.toFixed(1)}</td>
+    <td style="text-align:right;">${s.avg.toFixed(1)}%</td>
+  </tr>`).join('')}</tbody></table>
+  <button class="btn bf" style="margin-top:10px;" onclick="downloadRankingPDF()">&#128190; Download PDF</button>`;
+}
+function downloadRankingPDF(){
+  if(!rpRankData.length)return;
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF();
+  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);
+  doc.setFontSize(11);doc.text('Class Performance Ranking',14,24);
+  doc.setFontSize(9);doc.setTextColor(120);
+  doc.text((rpRankCls?.class_name||'')+' · '+(rpRankTerm?.term_name||'')+' · Generated '+new Date().toLocaleDateString(),14,30);
+  doc.autoTable({startY:36,
+    head:[['Pos.','Student','Code','Subjects','Total','Average']],
+    body:rpRankData.map(s=>[ordinal(s.position),s.full_name,s.member_code,s.subjectCount,s.total.toFixed(1),s.avg.toFixed(1)+'%']),
+    headStyles:{fillColor:[17,24,39]},styles:{fontSize:9}
+  });
+  doc.save('class-ranking-'+(rpRankCls?.class_name||'class').replace(/\s+/g,'-')+'.pdf');
+}
+
+// ── REPORTS: ALPHABETICAL ROSTER (PDF) ───────────────────────────
+let rpRosterList=[],rpRosterTitle='';
+function toggleRosterClassSel(){
+  const type=document.getElementById('rp-roster-type').value;
+  document.getElementById('rp-roster-class-wrap').style.display=type==='students'?'block':'none';
+}
+async function generateRoster(){
+  const type=document.getElementById('rp-roster-type').value;
+  let list=[],title='';
+  L(true);
+  try{
+    if(type==='students'){
+      const classId=document.getElementById('rp-roster-class').value;
+      if(!classId){L(false);alert('Select a class.');return;}
+      const{data:enr}=await sb.from('class_enrollments').select('*,members(id,full_name,member_code,class_or_dept,guardian_phone)').eq('class_id',classId);
+      list=(enr||[]).map(e=>e.members).filter(Boolean).sort((a,b)=>a.full_name.localeCompare(b.full_name))
+        .map(m=>({name:m.full_name,code:m.member_code,extra:m.class_or_dept||'—',phone:m.guardian_phone||'—'}));
+      title='Student Roster — '+(classes.find(c=>c.id===classId)?.class_name||'')+' (Alphabetical)';
+    }else if(type==='teachers'){
+      const{data}=await sb.from('inst_profiles').select('*').eq('institution_id',prof.institution_id).eq('role','teacher').eq('is_active',true).order('display_name');
+      list=(data||[]).map(t=>({name:t.display_name||'—',code:t.staff_code||'(not yet assigned)',extra:'Teaching Staff',phone:t.phone||t.login_email||'—'}));
+      title='Teaching Staff Roster (Alphabetical)';
+    }else{
+      const{data}=await sb.from('authorized_pickups').select('*,members(full_name)').eq('institution_id',prof.institution_id).eq('is_active',true).order('full_name');
+      list=(data||[]).map(p=>({name:p.full_name,code:p.pickup_code||'(not yet assigned)',extra:(p.relationship||'—')+' of '+(p.members?.full_name||'—'),phone:p.phone||'—'}));
+      title='Authorized Pickup Persons Roster (Alphabetical)';
+    }
+  }finally{L(false);}
+  rpRosterList=list;rpRosterTitle=title;
+  const c=document.getElementById('rp-roster-content');
+  if(!list.length){c.innerHTML='<div class="es">No records found.</div>';return;}
+  c.innerHTML=`<p class="hint">${E(title)} — ${list.length} record(s)</p>
+  <table><thead><tr><th>#</th><th>Name</th><th>Code</th><th>Class/Dept</th><th>Phone</th></tr></thead>
+  <tbody>${list.map((m,i)=>`<tr><td>${i+1}</td><td><strong>${E(m.name)}</strong></td>
+    <td style="font-family:monospace;font-size:.75rem;">${E(m.code)}</td><td>${E(m.extra)}</td><td>${E(m.phone)}</td></tr>`).join('')}</tbody></table>
+  <button class="btn bf" style="margin-top:10px;" onclick="downloadRosterPDF()">&#128190; Download PDF</button>`;
+}
+function downloadRosterPDF(){
+  if(!rpRosterList.length)return;
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF();
+  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);
+  doc.setFontSize(11);doc.text(rpRosterTitle,14,24);
+  doc.setFontSize(9);doc.setTextColor(120);doc.text('Generated '+new Date().toLocaleDateString(),14,30);
+  doc.autoTable({startY:36,
+    head:[['#','Name','Code','Class/Dept','Phone']],
+    body:rpRosterList.map((m,i)=>[i+1,m.name,m.code,m.extra,m.phone]),
+    headStyles:{fillColor:[17,24,39]},styles:{fontSize:9}
+  });
+  doc.save('roster-'+rpRosterTitle.split(' ')[0].toLowerCase()+'.pdf');
+}
+
+// ── REPORTS: FEE DEFAULTERS + SMS REMINDER ───────────────────────
+let rpFeeList=[],rpFeeTerm=null;
+async function loadFeeDefaulters(){
+  const termId=document.getElementById('rp-fterm').value;
+  const classId=document.getElementById('rp-fclass').value;
+  if(!termId){alert('Select a fee term.');return;}
+  const term=feeTerms.find(t=>t.id===termId);
+  if(!term){alert('Fee term not found — try refreshing.');return;}
+  L(true);
+  let memberList;
+  if(classId){
+    const{data:enr}=await sb.from('class_enrollments').select('*,members(id,full_name,member_code,class_or_dept,guardian_phone)').eq('class_id',classId);
+    memberList=(enr||[]).map(e=>e.members).filter(Boolean);
+  }else{
+    memberList=members.filter(m=>m.is_active);
+  }
+  const{data:pays}=await sb.from('fee_payments').select('member_id,amount_paid').eq('fee_term_id',termId);
+  const paidMap={};
+  (pays||[]).forEach(p=>{paidMap[p.member_id]=(paidMap[p.member_id]||0)+(p.amount_paid||0);});
+  const defaulters=memberList.map(m=>{
+    const paid=paidMap[m.id]||0;
+    const balance=term.amount-paid;
+    return{...m,paid,balance};
+  }).filter(m=>m.balance>0).sort((a,b)=>b.balance-a.balance);
+  L(false);
+  rpFeeList=defaulters;rpFeeTerm=term;
+  const c=document.getElementById('rp-fee-content');
+  if(!defaulters.length){c.innerHTML='<div class="es">No outstanding balances found for this term. 🎉</div>';return;}
+  c.innerHTML=`<p class="hint">${defaulters.length} student(s) owe fees for ${E(term.term_name)}.</p>
+  <table><thead><tr><th><input type="checkbox" id="rp-fee-all" checked onchange="document.querySelectorAll('.rp-fee-chk').forEach(cb=>cb.checked=this.checked)"></th>
+    <th>Student</th><th>Class</th><th>Guardian Phone</th><th style="text-align:right;">Balance</th></tr></thead>
+  <tbody>${defaulters.map(m=>`<tr>
+    <td><input type="checkbox" class="rp-fee-chk" value="${m.id}" checked></td>
+    <td><strong>${E(m.full_name)}</strong><br><span style="font-size:.7rem;color:var(--g);">${E(m.member_code)}</span></td>
+    <td>${E(m.class_or_dept||'—')}</td>
+    <td>${E(m.guardian_phone||'—')}</td>
+    <td style="text-align:right;font-weight:600;color:var(--d);">${GH(m.balance)}</td>
+  </tr>`).join('')}</tbody></table>
+  <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+    <button class="btn bf" onclick="downloadFeeDefaultersPDF()">&#128190; Download PDF</button>
+    <button class="btn bf bg2" onclick="sendFeeReminderSMS()">&#128241; Send SMS Reminder to Selected</button>
+  </div>`;
+}
+function getSelectedDefaulters(){
+  const ids=new Set(Array.from(document.querySelectorAll('.rp-fee-chk:checked')).map(cb=>cb.value));
+  return rpFeeList.filter(m=>ids.has(m.id));
+}
+function downloadFeeDefaultersPDF(){
+  const sel=getSelectedDefaulters();
+  if(!sel.length){alert('No students selected.');return;}
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF();
+  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);
+  doc.setFontSize(11);doc.text('Fee Defaulters — '+(rpFeeTerm?.term_name||''),14,24);
+  doc.setFontSize(9);doc.setTextColor(120);doc.text('Generated '+new Date().toLocaleDateString(),14,30);
+  doc.autoTable({startY:36,
+    head:[['Student','Code','Class','Guardian Phone','Balance']],
+    body:sel.map(m=>[m.full_name,m.member_code,m.class_or_dept||'—',m.guardian_phone||'—',GH(m.balance)]),
+    headStyles:{fillColor:[17,24,39]},styles:{fontSize:9}
+  });
+  doc.save('fee-defaulters-'+(rpFeeTerm?.term_name||'term').replace(/\s+/g,'-')+'.pdf');
+}
+async function sendFeeReminderSMS(){
+  const sel=getSelectedDefaulters().filter(m=>m.guardian_phone);
+  if(!sel.length){alert('No selected students have a guardian phone number on file.');return;}
+  const inst=institution?.name||'the school';
+  if(!confirm('Send a gentle fee reminder SMS to '+sel.length+' guardian(s)?'))return;
+  L(true);
+  let sent=0,failed=0;
+  for(const m of sel){
+    const msg=`Dear Parent, this is a gentle reminder from ${inst} that ${m.full_name} has an outstanding fee balance of ${GH(m.balance)} for ${rpFeeTerm.term_name}. Kindly settle at your earliest convenience. Thank you.`;
+    try{
+      if(SMS_API_KEY)await fetch('https://sms.arkesel.com/sms/api?action=send-sms&api_key='+encodeURIComponent(SMS_API_KEY)+'&to='+encodeURIComponent(m.guardian_phone)+'&from='+encodeURIComponent(SMS_SENDER_ID)+'&sms='+encodeURIComponent(msg));
+      await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg});
+      sent++;
+    }catch(e){failed++;}
+  }
+  L(false);
+  alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:'')+(!SMS_API_KEY?' (SMS_API_KEY not set — messages logged only)':''));
+}
+
 function buildRCHtml(student,scores,cls,term,totalStudents,inner,daysPresent){
   const school=E(institution?.name||'School');
   const subjectRows=(scores||[]).map(sc=>{
@@ -2235,6 +2503,29 @@ function denyPickup(){
   if(ls)ls.innerText='Pickup DENIED — no authorized person matched.';
 }
 
+// ── SHARED PRINT HELPER ─────────────────────────────────────────
+// Opens the given HTML in a hidden iframe and triggers the browser
+// print dialog. Every print / ID card button in this app routes
+// through here.
+function printIF(html){
+  let f=document.getElementById('__printFrame');
+  if(f)f.remove();
+  f=document.createElement('iframe');
+  f.id='__printFrame';
+  f.style.position='fixed';
+  f.style.right='0';f.style.bottom='0';
+  f.style.width='0';f.style.height='0';
+  f.style.border='0';
+  document.body.appendChild(f);
+  const doc=f.contentWindow.document;
+  doc.open();doc.write(html);doc.close();
+  f.onload=()=>{
+    setTimeout(()=>{
+      try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}
+    },150);
+  };
+}
+
 // ── PRINT PHOTO ID ────────────────────────────────────────────
 async function printMemberID(member){
   const qrUrl=await generateQRDataUrl(member.member_code);
@@ -2277,6 +2568,64 @@ function buildIDCard(member,qrUrl){
   </div>`;
 }
 
+// ── PRINT PICKUP ID ─────────────────────────────────────────────
+async function printPickupID(person,studentName){
+  let code=person.pickup_code;
+  if(!code){
+    try{
+      code=await nextCode('P','authorized_pickups','pickup_code');
+      await sb.from('authorized_pickups').update({pickup_code:code}).eq('id',person.id);
+    }catch(e){code='PU-'+String(person.id).slice(0,8).toUpperCase();}
+  }
+  const qrUrl=await generateQRDataUrl(code);
+  const card=buildPickupIDCard(person,studentName,code,qrUrl);
+  printIF(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>@page{size:A4;margin:10mm;}body{display:grid;grid-template-columns:1fr 1fr;gap:6mm;padding:0;}</style>
+  </head><body>${card}${card}${card}${card}</body></html>`);
+}
+function buildPickupIDCard(person,studentName,code,qrUrl){
+  const school=E(institution?.name||'Institution');
+  const photo=person.photo_url
+    ?`<img src="${person.photo_url}" style="width:20mm;height:23mm;object-fit:cover;border-radius:2mm;border:1px solid #e5e7eb;">`
+    :`<div style="width:20mm;height:23mm;background:#f3f4f6;border-radius:2mm;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">👤</div>`;
+  const qrImg=qrUrl?`<img src="${qrUrl}" style="width:17mm;height:17mm;">`:
+    `<div style="font-size:6pt;color:#9ca3af;">No QR</div>`;
+  return `<div style="width:85.6mm;height:54mm;border:2px solid #7c3aed;border-radius:3mm;overflow:hidden;font-family:Arial,sans-serif;background:#fff;position:relative;page-break-inside:avoid;display:flex;flex-direction:column;">
+    <div style="background:#7c3aed;color:#fff;text-align:center;padding:1.5mm 3mm;font-size:6.5pt;font-weight:bold;letter-spacing:0.3px;flex-shrink:0;">${school} &mdash; AUTHORIZED PICKUP</div>
+    <div style="display:flex;gap:2.5mm;padding:2.5mm;flex:1;align-items:flex-start;">
+      ${photo}
+      <div style="flex:1;display:flex;flex-direction:column;gap:0.8mm;">
+        <div style="font-size:7.5pt;font-weight:bold;color:#111827;line-height:1.2;">${E(person.full_name)}</div>
+        <div style="font-size:6.5pt;color:#374151;">${E(person.relationship||'—')}</div>
+        <div style="font-size:6pt;color:#6b7280;">Authorized to pick up: <strong>${E(studentName)}</strong></div>
+        <div style="font-size:6pt;color:#6b7280;">ID: <strong>${E(code)}</strong></div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;align-items:flex-start;gap:0.5mm;">
+          ${qrImg}
+          <div style="font-size:4.5pt;color:#9ca3af;">Present at gate for pickup</div>
+        </div>
+      </div>
+    </div>
+    <div style="position:absolute;bottom:1.5mm;right:2mm;font-size:4.5pt;color:#d1d5db;letter-spacing:0.5px;">NYANSATEK</div>
+  </div>`;
+}
+
+// ── PRINT TEACHER ID ────────────────────────────────────────────
+async function printTeacherID(t){
+  let code=t.staff_code;
+  if(!code){
+    try{
+      code=await nextCode('T','inst_profiles','staff_code');
+      await sb.from('inst_profiles').update({staff_code:code}).eq('id',t.id);
+    }catch(e){code='TCH-'+String(t.id).slice(0,8).toUpperCase();}
+  }
+  await printMemberID({
+    full_name:t.display_name||t.full_name||'Teacher',
+    class_or_dept:'Teaching Staff',
+    member_code:code,
+    photo_url:t.photo_url||null
+  });
+}
+
 // ── AUTHORIZED PICKUPS ────────────────────────────────────────
 function filterPickupMemberSearch(val){
   const list=document.getElementById('pu-mdlist');
@@ -2305,6 +2654,7 @@ async function loadPickupList(memberId){
   if(!data||!data.length){
     c.innerHTML='<div class="es">No authorized pickup persons yet for this student.</div>';return;
   }
+  const studentName=document.getElementById('pu-msch')?.value||document.getElementById('pu-msel')?.innerText.replace('Student: ','')||'';
   c.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:8px;">
   ${data.map(p=>`<div style="border:1px solid var(--b);border-radius:7px;padding:10px;text-align:center;">
     ${p.photo_url
@@ -2312,7 +2662,9 @@ async function loadPickupList(memberId){
       :`<div style="width:52px;height:52px;border-radius:50%;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin:0 auto 5px;">👤</div>`}
     <div style="font-size:.78rem;font-weight:600;">${E(p.full_name)}</div>
     <div style="font-size:.72rem;color:var(--g);">${E(p.relationship)}</div>
+    ${p.pickup_code?`<div style="font-size:.68rem;font-family:monospace;color:var(--g);">${E(p.pickup_code)}</div>`:''}
     ${p.phone?`<div style="font-size:.72rem;">${E(p.phone)}</div>`:''}
+    <button class="btn bsm" style="margin-top:6px;border-color:#7c3aed;color:#7c3aed;" onclick='printPickupID(${JSON.stringify(p)},${JSON.stringify(studentName)})'>&#127760; ID</button>
   </div>`).join('')}</div>`;
 }
 
@@ -2323,10 +2675,18 @@ async function saveAuthorizedPickup(){
   const phone=document.getElementById('pu-phone').value.trim();
   if(!name||!rel){alert('Name and relationship are required.');return;}
   L(true);
-  const{error}=await sb.from('authorized_pickups').insert({
+  let pickupCode='';
+  try{pickupCode=await nextCode('P','authorized_pickups','pickup_code');}catch(e){}
+  const base={
     institution_id:prof.institution_id,member_id:currentPickupMemberId,
     full_name:name,relationship:rel,phone:phone||null,photo_url:pickupPhoto||null
-  });
+  };
+  let{error}=await sb.from('authorized_pickups').insert(pickupCode?{...base,pickup_code:pickupCode}:base);
+  if(error&&pickupCode&&/pickup_code/i.test(error.message||'')){
+    // pickup_code column doesn't exist on this Supabase project yet — retry without it
+    ({error}=await sb.from('authorized_pickups').insert(base));
+    pickupCode='';
+  }
   L(false);if(error){alert('Error: '+error.message);return;}
   ['pu-name','pu-phone'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('pu-rel').value='';
@@ -2334,7 +2694,7 @@ async function saveAuthorizedPickup(){
   const pp=document.getElementById('pu-photo-preview');pp.src='';pp.style.display='none';
   document.getElementById('pu-photo-hint').style.display='block';
   await loadPickupList(currentPickupMemberId);
-  alert('Authorized pickup person saved!');
+  alert('Authorized pickup person saved!'+(pickupCode?' ID Number: '+pickupCode:''));
 }
 
 // ── CREATE TEACHER ACCOUNT ─────────────────────────────────────
@@ -2352,8 +2712,19 @@ async function createTeacherAccount(){
       role:'teacher',full_name:name,email,phone:phone||null,gender:gender||null,date_of_birth:dob||null
     }});
     if(error||data?.error){throw new Error(data?.error||error.message||'Could not create teacher.');}
+    let staffCode='';
+    try{
+      const{data:np}=await sb.from('inst_profiles').select('id')
+        .eq('institution_id',prof.institution_id).eq('email',email)
+        .order('created_at',{ascending:false}).limit(1).single();
+      if(np?.id){
+        staffCode=await nextCode('T','inst_profiles','staff_code');
+        await sb.from('inst_profiles').update({staff_code:staffCode}).eq('id',np.id);
+      }
+    }catch(e){/* staff_code column may not exist yet on inst_profiles — skip silently */}
     res.innerHTML=`<div style="padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
       <strong>${E(name)}</strong> can now log in with:<br>
+      ${staffCode?`Staff ID: <strong>${E(staffCode)}</strong><br>`:''}
       Email: <strong>${E(email)}</strong><br>
       Temporary password: <strong style="font-size:1.1rem;letter-spacing:1px;">${E(data.temp_password)}</strong><br>
       <span class="hint">They'll be asked to set a new password on first login. Save/share this now — it won't be shown again.</span>
@@ -2374,12 +2745,15 @@ async function loadTeacherAccountsList(){
     .eq('institution_id',prof.institution_id).eq('role','teacher').order('display_name');
   if(error){c.innerHTML=`<div class="es" style="color:var(--r);">${E(error.message)}</div>`;return;}
   if(!data||!data.length){c.innerHTML='<div class="es">No teacher accounts yet.</div>';return;}
-  c.innerHTML=`<table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead>
+  c.innerHTML=`<table><thead><tr><th>Name</th><th>Staff ID</th><th>Email</th><th>Status</th><th></th></tr></thead>
   <tbody>${data.map(t=>`<tr>
     <td><strong>${E(t.display_name||t.full_name||'—')}</strong></td>
+    <td style="font-family:monospace;font-size:.75rem;">${E(t.staff_code||'—')}</td>
     <td>${E(t.login_email||t.email||'—')}</td>
     <td><span class="badge ${t.is_active?'bg':'br'}">${t.is_active?'Active':'Deactivated'}</span></td>
-    <td>${t.is_active
+    <td>
+      <button class="btn bsm ba" onclick='printTeacherID(${JSON.stringify(t)})'>&#127760; ID</button>
+      ${t.is_active
       ?`<button class="btn bsm" style="color:var(--d);border-color:var(--d);" onclick="setTeacherStatus('${t.id}','deactivate','${E(t.display_name||t.full_name||'this teacher')}')">Deactivate</button>`
       :`<button class="btn bsm" style="color:var(--s);border-color:var(--s);" onclick="setTeacherStatus('${t.id}','reactivate','${E(t.display_name||t.full_name||'this teacher')}')">Reactivate</button>`}
     </td>
