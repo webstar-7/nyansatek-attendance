@@ -392,8 +392,8 @@ footer strong{color:var(--a);}
                   <option>Cash</option><option>Mobile Money</option>
                   <option>Bank Transfer</option><option>Cheque</option>
                 </select></div>
-              <div class="fg"><label>Receipt Ref (optional)</label>
-                <input type="text" id="fp-ref" placeholder="e.g. RCP-001"></div>
+              <div class="fg"><label>Receipt Ref</label>
+                <input type="text" value="Auto-generated on save" disabled></div>
               <button class="btn bf bg2" onclick="recordFeePayment()">Record Payment</button>
             </div>
             <div>
@@ -1486,19 +1486,23 @@ async function recordFeePayment(){
   const termId=document.getElementById('fp-term').value;
   const amt=parseFloat(document.getElementById('fp-amt').value)||0;
   const pm=document.getElementById('fp-pm').value;
-  const ref=document.getElementById('fp-ref').value.trim();
   if(!termId||amt<=0){alert('Select a fee term and enter an amount.');return;}
   L(true);
-  const{data:ins,error}=await sb.from('fee_payments').insert({
-    institution_id:prof.institution_id,member_id:selMemberId,
-    fee_term_id:termId,amount_paid:amt,payment_method:pm,
-    receipt_ref:ref||null,recorded_by:prof.id
-  }).select().single();
+  let ins,error,attempts=0;
+  do{
+    const ref=await nextCode('FPR','fee_payments','receipt_ref');
+    ({data:ins,error}=await sb.from('fee_payments').insert({
+      institution_id:prof.institution_id,member_id:selMemberId,
+      fee_term_id:termId,amount_paid:amt,payment_method:pm,
+      receipt_ref:ref,recorded_by:prof.id
+    }).select().single());
+    attempts++;
+  }while(error&&/duplicate|unique/i.test(error.message||'')&&attempts<4);
   L(false);
   if(error){alert('Error: '+error.message);return;}
   selMemberId=null;
   document.getElementById('fp-msch').value='';document.getElementById('fp-msel').innerText='';
-  document.getElementById('fp-amt').value='';document.getElementById('fp-ref').value='';
+  document.getElementById('fp-amt').value='';
   await loadPaymentHistory();
   if(confirm('Payment recorded! Print receipt now?'))await printReceipt(ins.id);
 }
