@@ -530,7 +530,7 @@ footer strong{color:var(--a);}
 
         <!-- REPORTS (structured, downloadable-PDF queries) -->
         <div class="tp" id="tp-rp">
-          <div class="card" style="margin-bottom:14px;border:1px solid var(--d);">
+          <div class="card" id="rp-renumber-card" style="margin-bottom:14px;border:1px solid var(--d);display:none;">
             <h2 style="color:var(--d);">&#9888; One-Time ID Renumbering</h2>
             <p class="hint" style="margin-bottom:10px;">Reassigns <strong>every</strong> existing student, teacher, and pickup person to a fresh, consistent <code>{PREFIX}_S/T/P_0001</code>-style ID, in the order they were registered. Use this once, before you start printing ID cards — it will change any codes already recorded elsewhere (gate scan sheets, exported lists, etc.), so don't run it after cards are in circulation.</p>
             <button class="btn" style="background:var(--d);" onclick="renumberAllIDs()">Renumber Everyone Now</button>
@@ -1489,17 +1489,18 @@ async function recordFeePayment(){
   const ref=document.getElementById('fp-ref').value.trim();
   if(!termId||amt<=0){alert('Select a fee term and enter an amount.');return;}
   L(true);
-  const{error}=await sb.from('fee_payments').insert({
+  const{data:ins,error}=await sb.from('fee_payments').insert({
     institution_id:prof.institution_id,member_id:selMemberId,
     fee_term_id:termId,amount_paid:amt,payment_method:pm,
     receipt_ref:ref||null,recorded_by:prof.id
-  });
+  }).select().single();
   L(false);
   if(error){alert('Error: '+error.message);return;}
   selMemberId=null;
   document.getElementById('fp-msch').value='';document.getElementById('fp-msel').innerText='';
   document.getElementById('fp-amt').value='';document.getElementById('fp-ref').value='';
-  await loadPaymentHistory();alert('Payment recorded!');
+  await loadPaymentHistory();
+  if(confirm('Payment recorded! Print receipt now?'))await printReceipt(ins.id);
 }
 
 async function loadPaymentHistory(){
@@ -1511,7 +1512,7 @@ async function loadPaymentHistory(){
   L(false);
   const c=document.getElementById('fplist');
   if(!data||!data.length){c.innerHTML='<div class="es">No payments recorded yet.</div>';return;}
-  c.innerHTML=`<table><thead><tr><th>Date</th><th>Member</th><th>Term</th><th>Amount</th><th>Method</th><th>Ref</th></tr></thead>
+  c.innerHTML=`<table><thead><tr><th>Date</th><th>Member</th><th>Term</th><th>Amount</th><th>Method</th><th>Ref</th><th></th></tr></thead>
   <tbody>${data.map(p=>`<tr>
     <td style="font-size:.75rem;">${p.payment_date}</td>
     <td>${E(p.members?.full_name||'—')}<br><span style="font-size:.7rem;color:var(--g);">${E(p.members?.member_code||'')}</span></td>
@@ -1519,7 +1520,66 @@ async function loadPaymentHistory(){
     <td style="font-weight:600;color:var(--s);">${GH(p.amount_paid)}</td>
     <td>${E(p.payment_method)}</td>
     <td style="font-size:.75rem;">${E(p.receipt_ref||'—')}</td>
+    <td><button class="btn bsm ba" onclick="printReceipt('${p.id}')">&#128196; Receipt</button></td>
   </tr>`).join('')}</tbody></table>`;
+}
+
+// ── PRINT RECEIPT (A5) ───────────────────────────────────────────
+async function printReceipt(paymentId){
+  L(true);
+  const{data:p,error}=await sb.from('fee_payments')
+    .select('*,members(full_name,member_code,class_or_dept),fee_terms(term_name,amount)')
+    .eq('id',paymentId).single();
+  if(error||!p){L(false);alert('Could not load payment: '+(error?.message||'not found'));return;}
+  const{data:allPays}=await sb.from('fee_payments').select('amount_paid')
+    .eq('member_id',p.member_id).eq('fee_term_id',p.fee_term_id);
+  L(false);
+  const totalPaid=(allPays||[]).reduce((s,x)=>s+(x.amount_paid||0),0);
+  const termAmt=p.fee_terms?.amount||0;
+  const balance=Math.max(0,termAmt-totalPaid);
+  printIF(buildReceiptHtml(p,totalPaid,termAmt,balance));
+}
+function buildReceiptHtml(p,totalPaid,termAmt,balance){
+  const school=E(institution?.name||'Institution');
+  const receiptNo=E(p.receipt_ref||('PAY-'+String(p.id).slice(0,8).toUpperCase()));
+  const dateStr=E(p.payment_date||new Date(p.created_at).toLocaleDateString());
+  const fmt=n=>(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receipt ${receiptNo}</title>
+  <style>
+    @page{size:A5;margin:12mm;}
+    *{box-sizing:border-box;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;}
+    .hdr{text-align:center;border-bottom:2px solid #111827;padding-bottom:8px;margin-bottom:14px;}
+    .hdr h1{font-size:15pt;margin:0;letter-spacing:.3px;}
+    .hdr p{font-size:9pt;color:#6b7280;margin:3px 0 0;}
+    .row{display:flex;justify-content:space-between;font-size:10pt;margin:5px 0;padding-bottom:3px;border-bottom:1px dotted #e5e7eb;}
+    .row span:first-child{color:#6b7280;}
+    .row span:last-child{font-weight:600;text-align:right;}
+    .totals{border-top:2px solid #111827;margin-top:10px;padding-top:8px;}
+    .totals .row{border-bottom:none;font-size:10.5pt;}
+    .grand{font-size:12pt;font-weight:700;}
+    .bal{color:${balance>0?'#dc2626':'#16a34a'};}
+    .sig{margin-top:34px;display:flex;justify-content:space-between;}
+    .sig div{border-top:1px solid #9ca3af;width:42%;text-align:center;padding-top:4px;font-size:8.5pt;color:#6b7280;}
+    .foot{text-align:center;margin-top:16px;font-size:7.5pt;color:#9ca3af;}
+  </style></head><body>
+    <div class="hdr"><h1>${school}</h1><p>Official Fee Payment Receipt</p></div>
+    <div class="row"><span>Receipt No.</span><span>${receiptNo}</span></div>
+    <div class="row"><span>Date</span><span>${dateStr}</span></div>
+    <div class="row"><span>Student</span><span>${E(p.members?.full_name||'—')}</span></div>
+    <div class="row"><span>Student ID</span><span>${E(p.members?.member_code||'—')}</span></div>
+    <div class="row"><span>Class</span><span>${E(p.members?.class_or_dept||'—')}</span></div>
+    <div class="row"><span>Fee Term</span><span>${E(p.fee_terms?.term_name||'—')}</span></div>
+    <div class="row"><span>Payment Method</span><span>${E(p.payment_method||'—')}</span></div>
+    <div class="totals">
+      <div class="row grand"><span>Amount Paid Today</span><span>GHS ${fmt(p.amount_paid)}</span></div>
+      <div class="row"><span>Total Paid (this term)</span><span>GHS ${fmt(totalPaid)}</span></div>
+      <div class="row"><span>Total Fee (this term)</span><span>GHS ${fmt(termAmt)}</span></div>
+      <div class="row bal"><span>Balance Remaining</span><span>GHS ${fmt(balance)}</span></div>
+    </div>
+    <div class="sig"><div>Received By</div><div>Parent / Guardian</div></div>
+    <div class="foot">Generated ${new Date().toLocaleString()} — Powered by NYANSATEK</div>
+  </body></html>`;
 }
 
 // ── ATTENDANCE REPORT ─────────────────────────────────────────
@@ -1595,7 +1655,7 @@ function swTab(tab){
   if(tab==='nl')loadNotifHistory();
   if(tab==='at'){loadAcademicTerms();}
   if(tab==='cl'){loadTeacherList().then(loadClasses);}
-  if(tab==='rp'){loadFeeTerms();}
+  if(tab==='rp'){loadFeeTerms();refreshRenumberCard();}
   if(tab==='pu'){loadTeacherList();}
   if(tab==='ts'){loadTeacherList().then(()=>{populateTsClassSel();loadTeacherAssignmentList();renderTeacherProfileSelect();});loadTeacherAccountsList();}
 }
@@ -2120,6 +2180,29 @@ function printAllRC(students,n){
   printIF(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:A4;margin:12mm 15mm;}body{margin:0;font-family:Arial,sans-serif;}</style></head><body>${pages}</body></html>`);
 }
 // ── ONE-TIME BULK ID RENUMBERING ─────────────────────────────────
+async function refreshRenumberCard(){
+  const card=document.getElementById('rp-renumber-card');
+  if(!card)return;
+  const needed=await checkRenumberNeeded();
+  card.style.display=needed?'block':'none';
+}
+async function checkRenumberNeeded(){
+  const prefix=schoolInitials();
+  const reS=new RegExp('^'+prefix+'_S_\\d{4,}$','i');
+  const reT=new RegExp('^'+prefix+'_T_\\d{4,}$','i');
+  const reP=new RegExp('^'+prefix+'_P_\\d{4,}$','i');
+  try{
+    const[{data:stu},{data:tch},{data:pu}]=await Promise.all([
+      sb.from('members').select('member_code').eq('institution_id',prof.institution_id),
+      sb.from('inst_profiles').select('staff_code').eq('institution_id',prof.institution_id).eq('role','teacher'),
+      sb.from('authorized_pickups').select('pickup_code').eq('institution_id',prof.institution_id)
+    ]);
+    const stuBad=(stu||[]).some(s=>!reS.test(s.member_code||''));
+    const tchBad=(tch||[]).some(t=>!reT.test(t.staff_code||''));
+    const puBad=(pu||[]).some(p=>!reP.test(p.pickup_code||''));
+    return stuBad||tchBad||puBad;
+  }catch(e){return true;} // if unsure (e.g. columns missing), show the card rather than hide it
+}
 async function renumberAllIDs(){
   if(!confirm('This will permanently reassign ID numbers for EVERY student, teacher, and pickup person in your school, in registration order, using the '+schoolInitials()+'_S/T/P_0001 scheme. This cannot be undone automatically. Continue?'))return;
   if(!confirm('Final check: make sure no ID cards have been printed or issued yet, since old codes will stop matching. Proceed with renumbering everyone now?'))return;
@@ -2162,7 +2245,7 @@ async function renumberAllIDs(){
     return;
   }
   L(false);
-  await loadMembers();await loadTeacherAccountsList();
+  await loadMembers();await loadTeacherAccountsList();await refreshRenumberCard();
   let msg='Renumbering complete.\n'
     +'Students: '+report.students.ok+' updated'+(report.students.fail?', '+report.students.fail+' failed':'')+'\n'
     +'Teachers: '+report.teachers.ok+' updated'+(report.teachers.fail?', '+report.teachers.fail+' failed':'')+'\n'
