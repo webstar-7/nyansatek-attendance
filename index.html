@@ -7,8 +7,9 @@
 <script>
 const SUPABASE_URL      = "https://efgckodcvtzrjiabcktf.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Kd560On82iHu2UadJow4lQ_BLP1Hr4L";
-const SMS_API_KEY       = "";           // Arkesel API key
-const SMS_SENDER_ID     = "NYANSATEK";
+// SMS is sent via /.netlify/functions/send-sms, which holds the Hubtel
+// Client ID/Secret server-side -- see sendSMS() below. No SMS
+// credentials belong in this file; anything here is visible in page source.
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
@@ -162,7 +163,10 @@ footer strong{color:var(--a);}
       <div class="fg"><label>Email</label>
         <input type="email" id="lb" placeholder="you@example.com" required></div>
       <div class="fg"><label>Password</label>
-        <input type="password" id="lp" required></div>
+        <div style="position:relative;">
+          <input type="password" id="lp" required style="padding-right:56px;">
+          <button type="button" onclick="const i=document.getElementById('lp');const b=this;if(i.type==='password'){i.type='text';b.innerText='Hide';}else{i.type='password';b.innerText='Show';}" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--bl);font-size:.72rem;font-weight:600;cursor:pointer;">Show</button>
+        </div></div>
       <button type="submit" class="btn ba bf" id="lbtn">Sign In</button>
     </form>
   </div>
@@ -176,9 +180,15 @@ footer strong{color:var(--a);}
     <div class="aerr" id="fpe"></div>
     <form id="fpf">
       <div class="fg"><label>New Password (min 8 chars)</label>
-        <input type="password" id="np" minlength="8" required></div>
+        <div style="position:relative;">
+          <input type="password" id="np" minlength="8" required style="padding-right:56px;">
+          <button type="button" onclick="const i=document.getElementById('np');const b=this;if(i.type==='password'){i.type='text';b.innerText='Hide';}else{i.type='password';b.innerText='Show';}" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--bl);font-size:.72rem;font-weight:600;cursor:pointer;">Show</button>
+        </div></div>
       <div class="fg"><label>Confirm Password</label>
-        <input type="password" id="cp2" minlength="8" required></div>
+        <div style="position:relative;">
+          <input type="password" id="cp2" minlength="8" required style="padding-right:56px;">
+          <button type="button" onclick="const i=document.getElementById('cp2');const b=this;if(i.type==='password'){i.type='text';b.innerText='Hide';}else{i.type='password';b.innerText='Show';}" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--bl);font-size:.72rem;font-weight:600;cursor:pointer;">Show</button>
+        </div></div>
       <button type="submit" class="btn ba bf">Save &amp; Continue</button>
     </form>
   </div>
@@ -917,7 +927,11 @@ async function initInstitution(){
   document.getElementById('gate-inst-name').innerText=inst?.name||'—';
   document.getElementById('gate-inst-type').innerText=inst?.type?.toUpperCase()||'—';
   if(prof.role==='teacher')await initTeacherScores();
-  swV('gv');startClock();
+  // Each role lands in its own home view instead of always opening the
+  // gate scanner: admin -> Admin panel, teacher -> My Scores, and the
+  // dedicated gate-keeper role (no elevated role) -> the Gate itself.
+  const landingView=prof.role==='admin'?'av':prof.role==='teacher'?'sv':'gv';
+  swV(landingView);startClock();
   await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();
   setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
   document.getElementById('scan-input').focus();
@@ -1122,15 +1136,18 @@ function showResult(r){
 }
 
 // ── SMS ───────────────────────────────────────────────────────
+// Routed through a Netlify function so the Hubtel Client ID/Secret
+// stay server-side and are never exposed in this page's source.
+// Returns true/false so callers can tally sent/failed counts.
 async function sendSMS(phone,message){
-  if(!SMS_API_KEY)return;
   try{
-    await fetch('https://sms.arkesel.com/sms/api?action=send-sms'
-      +'&api_key='+encodeURIComponent(SMS_API_KEY)
-      +'&to='+encodeURIComponent(phone)
-      +'&from='+encodeURIComponent(SMS_SENDER_ID)
-      +'&sms='+encodeURIComponent(message));
-  }catch(e){console.error('SMS error:',e);}
+    const res=await fetch('/.netlify/functions/send-sms',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({phone,message})
+    });
+    if(!res.ok)console.error('SMS failed:',await res.text());
+    return res.ok;
+  }catch(e){console.error('SMS error:',e);return false;}
 }
 
 // ── MEMBERS ───────────────────────────────────────────────────
@@ -1431,7 +1448,6 @@ async function loadFeeTerms(){
     rpSel.innerHTML='<option value="">-- Select Fee Term --</option>';
     feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name+(t.class_id?' — '+(classes.find(c=>c.id===t.class_id)?.class_name||'class'):' (All Classes)');rpSel.appendChild(o);});
   }
-  if(!SMS_API_KEY){const h=document.getElementById('rp-fee-hint');if(h)h.innerHTML='&#9888; SMS_API_KEY not set — reminders will be logged only, not actually sent. Untick anyone you don\'t want to include before sending or downloading.';}
   const csel=document.getElementById('ft-class');
   if(csel){
     const cur=csel.value;
@@ -2434,14 +2450,16 @@ async function sendFeeReminderSMS(){
   let sent=0,failed=0;
   for(const m of sel){
     const msg=`Dear Parent, this is a gentle reminder from ${inst} that ${m.full_name} has an outstanding fee balance of ${GHP(m.balance)} for ${rpFeeTerm.term_name}. Kindly settle at your earliest convenience. Thank you.`;
-    try{
-      if(SMS_API_KEY)await fetch('https://sms.arkesel.com/sms/api?action=send-sms&api_key='+encodeURIComponent(SMS_API_KEY)+'&to='+encodeURIComponent(m.guardian_phone)+'&from='+encodeURIComponent(SMS_SENDER_ID)+'&sms='+encodeURIComponent(msg));
+    const ok=await sendSMS(m.guardian_phone,msg);
+    if(ok){
       await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg});
       sent++;
-    }catch(e){failed++;}
+    }else{
+      failed++;
+    }
   }
   L(false);
-  alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:'')+(!SMS_API_KEY?' (SMS_API_KEY not set — messages logged only)':''));
+  alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:''));
 }
 
 function buildRCHtml(student,scores,cls,term,totalStudents,inner,daysPresent){
@@ -2544,16 +2562,18 @@ async function sendBulkSMS2(){
   L(true);
   let sent=0,failed=0;
   for(const m of recipients){
-    try{
-      if(SMS_API_KEY)await fetch('https://sms.arkesel.com/sms/api?action=send-sms&api_key='+encodeURIComponent(SMS_API_KEY)+'&to='+encodeURIComponent(m.guardian_phone)+'&from='+encodeURIComponent(SMS_SENDER_ID)+'&sms='+encodeURIComponent(msg));
+    const ok=await sendSMS(m.guardian_phone,msg);
+    if(ok){
       await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg});
       sent++;
-    }catch(e){failed++;}
+    }else{
+      failed++;
+    }
   }
   L(false);
   document.getElementById('bs-msg').value='';
   document.getElementById('bs-count').innerText='0 characters';
-  alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:'')+(!SMS_API_KEY?' (SMS_API_KEY not set — messages logged only)':''));
+  alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:''));
 }
 
 
