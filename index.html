@@ -10,11 +10,14 @@ const SUPABASE_ANON_KEY = "sb_publishable_Kd560On82iHu2UadJow4lQ_BLP1Hr4L";
 // SMS is sent via /.netlify/functions/send-sms, which holds the Hubtel
 // Client ID/Secret server-side -- see sendSMS() below. No SMS
 // credentials belong in this file; anything here is visible in page source.
+const PAYSTACK_PUBLIC_KEY = "pk_live_f06348c9521967084c78419c709c740c7d3b51d2"; // same pk_live_... key already used in the storefront's js/checkout.js -- this is the PUBLIC key, safe to expose here
+const BILLING_API_BASE = "https://nyansatek.systems/.netlify/functions"; // renew/upgrade endpoints are centralized on the storefront -- see their _lib/cors.js for why this cross-origin call is allowed
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://js.paystack.co/v2/inline.js"></script>
 <style>
 :root{--p:#111827;--a:#d4af37;--bg:#f3f4f6;--b:#e5e7eb;--g:#9ca3af;--s:#10b981;--d:#ef4444;--t:#1f2937;--bl:#2563eb;}
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif;}
@@ -716,6 +719,14 @@ footer strong{color:var(--a);}
       </div>
     </div>
 
+    <!-- BILLING (admin only) -->
+    <div id="bv" class="view">
+      <div class="card" style="max-width:640px;margin:0 auto;">
+        <h2>Billing &amp; Subscription</h2>
+        <div id="bv-content"><div class="es">Loading...</div></div>
+      </div>
+    </div>
+
     <!-- TEACHER SCORES VIEW -->
     <div id="sv" class="view">
       <div class="card">
@@ -897,6 +908,7 @@ function swV(v){
   if(el){el.style.display=v==='gv'?'flex':'block';el.classList.add('on');}
   const b=document.getElementById('t-'+v);if(b)b.classList.add('on');
   if(v==='gv')setTimeout(()=>document.getElementById('scan-input')?.focus(),100);
+  if(v==='bv')loadBillingInfo();
 }
 
 function buildNav(role){
@@ -904,7 +916,7 @@ function buildNav(role){
   const tabs=role==='master'
     ?[['mv','Overview']]
     :role==='admin'
-    ?[['gv','Gate'],['av','Admin']]
+    ?[['gv','Gate'],['av','Admin'],['bv','Billing']]
     :role==='teacher'
     ?[['gv','Gate'],['sv','My Scores']]
     :role==='parent'
@@ -2901,6 +2913,90 @@ async function createTeacherAccount(){
   }catch(err){
     res.innerHTML=`<div class="es" style="color:var(--r);">${E(err.message)}</div>`;
   }finally{btn.disabled=false;btn.innerText='Create Teacher';}
+}
+
+// ── BILLING (admin) ──────────────────────────────────────────────
+async function loadBillingInfo(){
+  const c=document.getElementById('bv-content');
+  c.innerHTML='<div class="es">Loading...</div>';
+  const{data:inst,error}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+  if(error||!inst){c.innerHTML='<div class="es" style="color:var(--d);">Could not load billing info.</div>';return;}
+
+  const planLabel=inst.plan_key==='yearly'?'Yearly':'Monthly';
+  const statusBadge=inst.subscription_status==='active'
+    ?'<span class="badge bg">Active</span>'
+    :'<span class="badge br">Suspended \u2014 payment needed</span>';
+  const dueDate=inst.paid_through_date?new Date(inst.paid_through_date).toLocaleDateString():'\u2014';
+
+  c.innerHTML=`
+    <table style="margin-bottom:16px;">
+      <tbody>
+        <tr><td style="color:var(--g);width:160px;">Current plan</td><td><strong>${E(planLabel)}</strong></td></tr>
+        <tr><td style="color:var(--g);">Status</td><td>${statusBadge}</td></tr>
+        <tr><td style="color:var(--g);">Renews on</td><td>${E(dueDate)}</td></tr>
+        <tr><td style="color:var(--g);">Payment method</td><td>${E(inst.payment_channel==='card'?'Card':inst.payment_channel==='momo'?'Mobile Money':'\u2014')}</td></tr>
+      </tbody>
+    </table>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn ba" onclick="startRenewNow()">Renew Now</button>
+      ${inst.plan_key!=='yearly'?'<button class="btn bg2" onclick="startUpgrade()">Upgrade to Yearly</button>':''}
+    </div>
+    <p class="hint" style="margin-top:12px;">Renewing early extends your current renewal date \u2014 it doesn't reset it to today. Upgrading to yearly starts a fresh 12-month period from today and raises your student limit to 800.</p>
+    <div id="bv-msg" style="margin-top:10px;"></div>
+  `;
+}
+
+function payWithPaystack({amountPesewas, email, onSuccess}){
+  if(!window.PaystackPop){alert('Payment system failed to load. Please refresh and try again.');return;}
+  const handler=PaystackPop.setup({
+    key:PAYSTACK_PUBLIC_KEY,
+    email:email||'billing@nyansatek.systems',
+    amount:amountPesewas,
+    currency:'GHS',
+    channels:['card','mobile_money'],
+    ref:'MAN-'+prof.institution_id+'-'+Date.now(), // distinct from RNW- (auto MoMo renewals) so the webhook ignores these entirely -- the direct endpoint call below is solely responsible for processing manual renew/upgrade payments
+    callback:function(response){ onSuccess(response.reference); },
+    onClose:function(){ /* user closed the popup -- no action needed */ }
+  });
+  handler.openIframe();
+}
+
+async function startRenewNow(){
+  const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+  if(!inst)return;
+  const amountPesewas=inst.plan_key==='yearly'?150000:15000; // keep in sync with _catalog.js
+  payWithPaystack({amountPesewas,email:inst.contact_email,onSuccess: async (reference)=>{
+    await callBillingEndpoint('renew-subscription',reference);
+  }});
+}
+
+async function startUpgrade(){
+  if(!confirm('Upgrade to the Yearly plan now for GH\u20B51,500? This starts a fresh 12-month period from today and raises your student limit to 800.'))return;
+  const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+  if(!inst)return;
+  payWithPaystack({amountPesewas:150000,email:inst.contact_email,onSuccess: async (reference)=>{
+    await callBillingEndpoint('upgrade-subscription',reference);
+  }});
+}
+
+async function callBillingEndpoint(endpoint,reference){
+  const msg=document.getElementById('bv-msg');
+  msg.innerHTML='<div class="es">Confirming payment...</div>';
+  try{
+    const res=await fetch(BILLING_API_BASE+'/'+endpoint,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({reference,tenantProduct:'school',tenantId:prof.institution_id})
+    });
+    const data=await res.json();
+    if(!res.ok||!data.ok){
+      msg.innerHTML='<div class="es" style="color:var(--d);">'+E(data.error||'Something went wrong confirming your payment. If you were charged, contact support@nyansatek.systems.')+'</div>';
+      return;
+    }
+    msg.innerHTML='<div class="es" style="color:var(--s);">Done! Your subscription is updated.</div>';
+    await loadBillingInfo();
+  }catch(err){
+    msg.innerHTML='<div class="es" style="color:var(--d);">Network error confirming payment. If you were charged, contact support@nyansatek.systems.</div>';
+  }
 }
 
 // ── TEACHER ACCOUNTS: list + deactivate/reactivate ─────────────
