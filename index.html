@@ -197,7 +197,26 @@ footer strong{color:var(--a);}
   </div>
 </div>
 
+<!-- SUSPENDED ACCESS -->
+<div class="as" id="sus" style="display:none;">
+  <div class="ac" style="border-top-color:var(--d);">
+    <h1 style="color:var(--d);">Account Suspended</h1>
+    <p class="sub" id="sus-sub">Your subscription needs to be renewed to continue.</p>
+    <div id="sus-admin-body" style="display:none;">
+      <div class="fg"><label>Current plan</label><input type="text" id="sus-plan" disabled></div>
+      <button class="btn ba bf" onclick="susRenew()">Renew Now</button>
+      <p class="hint" style="margin-top:8px;">If you believe this is a mistake, contact support at 0536 340 578.</p>
+      <div id="sus-msg" style="margin-top:8px;"></div>
+    </div>
+    <div id="sus-nonadmin-body" style="display:none;">
+      <p style="font-size:.85rem;color:#4b5563;">Please contact the school administrator to reactivate this account before you can sign in.</p>
+    </div>
+    <button class="btn bf" style="margin-top:14px;background:#6b7280;" onclick="handleLogout()">Log Out</button>
+  </div>
+</div>
+
 <!-- APP -->
+
 <div id="app" style="display:none;flex-direction:column;min-height:100vh;">
   <header>
     <div class="brand"><span id="hbiz">—</span><em>| Attendance System</em></div>
@@ -843,6 +862,7 @@ const L=on=>document.getElementById('lov').classList.toggle('on',on);
 function scr(n){
   document.getElementById('ls').style.display=n==='l'?'flex':'none';
   document.getElementById('fps').style.display=n==='f'?'flex':'none';
+  document.getElementById('sus').style.display=n==='x'?'flex':'none';
   document.getElementById('app').style.display=n==='a'?'flex':'none';
 }
 
@@ -895,9 +915,47 @@ async function boot2(){
   const{data:p}=await sb.from('inst_profiles').select('*').eq('id',sess.user.id).single();
   if(!p){L(false);scr('l');return;}
   prof=p;
+  if(prof.role!=='master'&&prof.institution_id){
+    const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+    if(inst&&inst.subscription_status==='suspended'){
+      L(false);
+      document.getElementById('sus-admin-body').style.display=prof.role==='admin'?'block':'none';
+      document.getElementById('sus-nonadmin-body').style.display=prof.role==='admin'?'none':'block';
+      if(prof.role==='admin'){
+        document.getElementById('sus-plan').value=(inst.plan_key==='yearly'?'Yearly':'Monthly')+' \u2014 GH\u20B5'+(inst.plan_key==='yearly'?'1,500/yr':'150/mo');
+      }
+      scr('x');
+      return;
+    }
+  }
   if(prof.must_change_password){L(false);scr('f');return;}
   if(prof.role==='master')await initMaster();else if(prof.role==='parent')await initParent();else await initInstitution();
   L(false);scr('a');
+}
+
+async function susRenew(){
+  const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+  if(!inst)return;
+  const amountPesewas=inst.plan_key==='yearly'?150000:15000; // keep in sync with _catalog.js
+  payWithPaystack({amountPesewas,email:inst.contact_email,onSuccess: async (reference)=>{
+    const msg=document.getElementById('sus-msg');
+    msg.innerHTML='<div class="es">Confirming payment...</div>';
+    try{
+      const res=await fetch(BILLING_API_BASE+'/renew-subscription',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({reference,tenantProduct:'school',tenantId:prof.institution_id})
+      });
+      const data=await res.json();
+      if(!res.ok||!data.ok){
+        msg.innerHTML='<div class="es" style="color:var(--d);">'+E(data.error||'Something went wrong. If you were charged, contact support@nyansatek.systems.')+'</div>';
+        return;
+      }
+      msg.innerHTML='<div class="es" style="color:var(--s);">Payment confirmed \u2014 reloading...</div>';
+      setTimeout(()=>boot2(),1200);
+    }catch(err){
+      msg.innerHTML='<div class="es" style="color:var(--d);">Network error. If you were charged, contact support@nyansatek.systems.</div>';
+    }
+  }});
 }
 
 // ── NAV ───────────────────────────────────────────────────────
