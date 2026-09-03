@@ -126,8 +126,7 @@ td{padding:8px 10px;border-bottom:1px solid var(--b);vertical-align:middle;}
 .sdrop input{width:100%;padding:6px 8px;border:1px solid var(--b);border-radius:4px;font-size:.81rem;}
 .sdlist{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--b);border-radius:4px;max-height:180px;overflow-y:auto;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.1);display:none;}
 .sdlist.on{display:block;}
-.photo-zone{border:2px dashed var(--b);border-radius:7px;padding:10px;text-align:center;cursor:pointer;margin-bottom:9px;transition:border-color .15s;}
-.photo-zone:hover{border-color:var(--a);}
+.photo-zone{border:2px dashed var(--b);border-radius:7px;padding:10px;text-align:center;margin-bottom:9px;}
 .photo-zone img{width:64px;height:64px;border-radius:6px;object-fit:cover;margin:0 auto 4px;display:block;}
 .sdi{padding:7px 10px;cursor:pointer;font-size:.8rem;border-bottom:1px solid var(--b);}
 .sdi:hover{background:var(--bg);}
@@ -147,10 +146,14 @@ footer strong{color:var(--a);}
   header,footer,nav,.btn,.tbar,.lov{display:none!important;}
   body{background:#fff!important;}
 }
-.photo-zone{border:2px dashed var(--b);border-radius:7px;padding:10px;text-align:center;cursor:pointer;margin-bottom:9px;transition:border-color .15s;}
-.photo-zone:hover{border-color:var(--a);}
-.photo-zone img{width:64px;height:64px;border-radius:6px;object-fit:cover;margin:0 auto 4px;display:block;}
 .thumb{width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;}
+
+/* PHOTO CAPTURE BUTTONS */
+.photo-btn-row{display:flex;gap:6px;justify-content:center;margin-top:8px;}
+.photo-btn-row .btn{flex:1;}
+#camera-modal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;padding:20px;}
+#camera-modal .cam-card{background:#111827;border-radius:12px;padding:16px;max-width:420px;width:100%;}
+#camera-video{width:100%;border-radius:8px;background:#000;display:block;}
 </style>
   <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -328,12 +331,16 @@ footer strong{color:var(--a);}
           <div class="admin-grid">
             <div>
               <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Register New Member</h3>
-              <div class="photo-zone" id="mb-photo-zone" onclick="document.getElementById('mb-photo-file').click()">
+              <div class="photo-zone" id="mb-photo-zone">
                 <img id="mb-photo-preview" src="" alt="" style="display:none;">
                 <div id="mb-photo-hint"><div style="font-size:1.5rem;">&#128247;</div>
-                  <div style="font-size:.75rem;color:var(--g);margin-top:3px;">Tap to take/upload photo</div></div>
+                  <div style="font-size:.75rem;color:var(--g);margin-top:3px;">No photo yet</div></div>
+                <div class="photo-btn-row">
+                  <button type="button" class="btn bsm" onclick="openCamera('mb')">&#128247; Take Photo</button>
+                  <button type="button" class="btn bsm" onclick="document.getElementById('mb-photo-file').click()">&#128193; Upload Photo</button>
+                </div>
               </div>
-              <input type="file" id="mb-photo-file" accept="image/*" capture="user" style="display:none;">
+              <input type="file" id="mb-photo-file" accept="image/*" style="display:none;">
               <div class="fg"><label>Full Name *</label><input type="text" id="mb-name"></div>
               <div class="fg"><label>ID Number</label>
                 <input type="text" id="mb-code" placeholder="Auto-generated on save (e.g. OIS_S_0001)" disabled></div>
@@ -645,12 +652,16 @@ footer strong{color:var(--a);}
                 </div>
                 <div id="pu-msel" class="hint" style="margin-top:4px;"></div>
               </div>
-              <div class="photo-zone" id="pu-photo-zone" onclick="document.getElementById('pu-photo-file').click()">
+              <div class="photo-zone" id="pu-photo-zone">
                 <img id="pu-photo-preview" src="" alt="" style="display:none;">
                 <div id="pu-photo-hint"><div style="font-size:1.5rem;">&#128247;</div>
                   <div style="font-size:.75rem;color:var(--g);margin-top:3px;">Photo of pickup person (for ID verification)</div></div>
+                <div class="photo-btn-row">
+                  <button type="button" class="btn bsm" onclick="openCamera('pu')">&#128247; Take Photo</button>
+                  <button type="button" class="btn bsm" onclick="document.getElementById('pu-photo-file').click()">&#128193; Upload Photo</button>
+                </div>
               </div>
-              <input type="file" id="pu-photo-file" accept="image/*" capture="user" style="display:none;">
+              <input type="file" id="pu-photo-file" accept="image/*" style="display:none;">
               <div class="fg"><label>Full Name *</label><input type="text" id="pu-name" placeholder="e.g. Mary Asante"></div>
               <div class="fg"><label>Relationship *</label>
                 <select id="pu-rel">
@@ -720,12 +731,16 @@ footer strong{color:var(--a);}
             <div>
               <div class="fg"><label>Select Teacher</label>
                 <select id="tp-teacher-sel" onchange="loadTeacherProfile(this.value)"><option value="">-- Select Teacher --</option></select></div>
-              <div class="photo-zone" id="tp-photo-zone" onclick="document.getElementById('tp-photo-file').click()">
+              <div class="photo-zone" id="tp-photo-zone">
                 <img id="tp-photo-preview" src="" alt="" style="display:none;">
                 <div id="tp-photo-hint"><div style="font-size:1.5rem;">&#128247;</div>
-                  <div style="font-size:.75rem;color:var(--g);margin-top:3px;">Tap to take/upload photo</div></div>
+                  <div style="font-size:.75rem;color:var(--g);margin-top:3px;">No photo yet</div></div>
+                <div class="photo-btn-row">
+                  <button type="button" class="btn bsm" onclick="openCamera('tp')">&#128247; Take Photo</button>
+                  <button type="button" class="btn bsm" onclick="document.getElementById('tp-photo-file').click()">&#128193; Upload Photo</button>
+                </div>
               </div>
-              <input type="file" id="tp-photo-file" accept="image/*" capture="user" style="display:none;">
+              <input type="file" id="tp-photo-file" accept="image/*" style="display:none;">
               <div class="fg"><label>Gender</label>
                 <select id="tp-gender"><option value="">-- Select --</option><option>Male</option><option>Female</option></select></div>
               <div class="fg"><label>Date of Birth</label><input type="date" id="tp-dob"></div>
@@ -824,6 +839,17 @@ footer strong{color:var(--a);}
   <footer>
     <span id="fbiz">—</span> &bull; Powered by <strong>NYANSATEK</strong>
   </footer>
+</div>
+
+<!-- CAMERA CAPTURE MODAL (shared by every "Take Photo" button) -->
+<div id="camera-modal">
+  <div class="cam-card">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <div style="display:flex;gap:10px;margin-top:12px;">
+      <button type="button" class="btn bg2 bf" onclick="capturePhoto()">&#128248; Capture</button>
+      <button type="button" class="btn bf" style="background:#374151;color:#fff;" onclick="closeCamera()">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -2673,14 +2699,65 @@ function compressImage(file,maxDim=480,quality=0.72){
   });
 }
 
+// ── PHOTO PREVIEW HELPER (shared by camera capture + file upload) ──
+function setPhotoPreview(prefix,dataUrl){
+  const img=document.getElementById(prefix+'-photo-preview');
+  const hint=document.getElementById(prefix+'-photo-hint');
+  if(img){img.src=dataUrl;img.style.display='block';}
+  if(hint)hint.style.display='none';
+}
+
+// ── CAMERA CAPTURE (shared "Take Photo" flow for all photo zones) ──
+let currentCameraTarget=null,cameraStream=null;
+
+async function openCamera(target){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    alert('Camera capture is not supported in this browser. Please use Upload Photo instead.');
+    return;
+  }
+  currentCameraTarget=target;
+  const modal=document.getElementById('camera-modal');
+  modal.style.display='flex';
+  const video=document.getElementById('camera-video');
+  try{
+    cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});
+    video.srcObject=cameraStream;
+  }catch(e){
+    alert('Could not access the camera: '+e.message+'. You can use Upload Photo instead.');
+    closeCamera();
+  }
+}
+
+function closeCamera(){
+  document.getElementById('camera-modal').style.display='none';
+  if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;}
+  currentCameraTarget=null;
+}
+
+function capturePhoto(){
+  const video=document.getElementById('camera-video');
+  if(!video.videoWidth){alert('Camera is still starting up — try again in a moment.');return;}
+  const maxDim=480;
+  let w=video.videoWidth,h=video.videoHeight;
+  if(w>h&&w>maxDim){h=Math.round(h*maxDim/w);w=maxDim;}
+  else if(h>=w&&h>maxDim){w=Math.round(w*maxDim/h);h=maxDim;}
+  const canvas=document.createElement('canvas');
+  canvas.width=w;canvas.height=h;
+  canvas.getContext('2d').drawImage(video,0,0,w,h);
+  const dataUrl=canvas.toDataURL('image/jpeg',0.72);
+  const target=currentCameraTarget;
+  if(target==='mb'){mbPhoto=dataUrl;setPhotoPreview('mb',dataUrl);}
+  else if(target==='pu'){pickupPhoto=dataUrl;setPhotoPreview('pu',dataUrl);}
+  else if(target==='tp'){tpPhoto=dataUrl;setPhotoPreview('tp',dataUrl);}
+  closeCamera();
+}
+
 // ── MEMBER PHOTO ──────────────────────────────────────────────
 let mbPhoto=null;
 document.getElementById('mb-photo-file').addEventListener('change',async e=>{
   const file=e.target.files[0];if(!file)return;
   mbPhoto=await compressImage(file);
-  document.getElementById('mb-photo-preview').src=mbPhoto;
-  document.getElementById('mb-photo-preview').style.display='block';
-  document.getElementById('mb-photo-hint').style.display='none';
+  setPhotoPreview('mb',mbPhoto);
 });
 
 // ── PICKUP PERSON PHOTO ───────────────────────────────────────
@@ -2688,9 +2765,7 @@ let pickupPhoto=null,currentPickupMemberId=null;
 document.getElementById('pu-photo-file').addEventListener('change',async e=>{
   const file=e.target.files[0];if(!file)return;
   pickupPhoto=await compressImage(file);
-  document.getElementById('pu-photo-preview').src=pickupPhoto;
-  document.getElementById('pu-photo-preview').style.display='block';
-  document.getElementById('pu-photo-hint').style.display='none';
+  setPhotoPreview('pu',pickupPhoto);
 });
 
 // ── PICKUP MODE ───────────────────────────────────────────────
@@ -3184,9 +3259,7 @@ let tpPhoto=null;
 document.getElementById('tp-photo-file').addEventListener('change',async e=>{
   const file=e.target.files[0];if(!file)return;
   tpPhoto=await compressImage(file);
-  document.getElementById('tp-photo-preview').src=tpPhoto;
-  document.getElementById('tp-photo-preview').style.display='block';
-  document.getElementById('tp-photo-hint').style.display='none';
+  setPhotoPreview('tp',tpPhoto);
 });
 function calcAge(dob){
   if(!dob)return null;
