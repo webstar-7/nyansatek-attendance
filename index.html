@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>NYANSATEK Attendance System</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NYANSATEK Attendance">
 <script>
 const SUPABASE_URL      = "https://efgckodcvtzrjiabcktf.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Kd560On82iHu2UadJow4lQ_BLP1Hr4L";
@@ -39,6 +44,10 @@ header{background:var(--p);color:#fff;padding:0 18px;height:52px;display:flex;al
 nav button{background:transparent;border:1px solid transparent;color:var(--g);padding:4px 10px;font-weight:600;cursor:pointer;border-radius:4px;font-size:.78rem;transition:all .15s;}
 nav button.on{border-color:var(--a);color:#fff;background:rgba(212,175,55,.12);}
 nav .lo{color:#fca5a5!important;}
+.offline-badge{background:#fee2e2;border:1px solid var(--d);border-radius:5px;padding:2px 9px;font-size:.7rem;color:#991b1b;font-weight:700;text-align:center;display:none;}
+.offline-badge.on{display:block;}
+.sync-badge{background:#fef3c7;border:1px solid #d97706;border-radius:5px;padding:2px 9px;font-size:.7rem;color:#92400e;font-weight:700;text-align:center;cursor:pointer;display:none;}
+.sync-badge.on{display:block;}
 
 /* LAYOUT */
 main{flex:1;overflow:hidden;}
@@ -226,7 +235,11 @@ footer strong{color:var(--a);}
 <div id="app" style="display:none;flex-direction:column;min-height:100vh;">
   <header>
     <div class="brand"><span id="hbiz">—</span><em>| Attendance System</em></div>
-    <div class="hr"><nav id="nav"></nav></div>
+    <div class="hr">
+      <div class="offline-badge" id="offline-badge">&#9888; OFFLINE</div>
+      <div class="sync-badge" id="sync-badge" onclick="manualSync()" title="Click to sync now">0 pending sync</div>
+      <nav id="nav"></nav>
+    </div>
   </header>
   <main>
 
@@ -895,6 +908,394 @@ function scr(n){
   document.getElementById('app').style.display=n==='a'?'flex':'none';
 }
 
+// ══════════════════════════════════════════════════════════════
+// OFFLINE LOGIN — cached profile/institution fallback for boot2()
+// ══════════════════════════════════════════════════════════════
+// Same approach as NYANSATEK POS: signing in for the very first time on
+// a device always needs a live connection (there's no way to check a
+// password against nothing). But once a device HAS signed in
+// successfully at least once, this lets it boot straight into the app
+// on later visits even with zero connectivity, instead of boot2()'s two
+// live Supabase calls (profile, then institution) bouncing the user
+// back to the login screen the moment either one fails offline.
+//
+// OFFLINE_SESSION_TRUST_DAYS is set long on purpose (near-indefinite)
+// so a device that goes weeks without connectivity still boots straight
+// in. The trade-off: a lost or stolen device stays "logged in" for the
+// same long window — reasonable for a staff device on a paid school
+// tool, but a deliberate choice, not a free lunch.
+// ══════════════════════════════════════════════════════════════
+const OFFLINE_SESSION_TRUST_DAYS=90;
+const OFFLINE_SESSION_TRUST_MS=OFFLINE_SESSION_TRUST_DAYS*24*60*60*1000;
+const OFFLINE_SESSION_KEY='nyansatek_school_cached_session';
+
+function cacheSessionOffline(profile,inst){
+  try{
+    localStorage.setItem(OFFLINE_SESSION_KEY,JSON.stringify({
+      profile,institution:inst||null,cachedAt:new Date().toISOString()
+    }));
+  }catch(e){/* non-fatal — offline boot fallback just won't be available on this device */}
+}
+function getCachedSessionOffline(){
+  try{
+    const raw=localStorage.getItem(OFFLINE_SESSION_KEY);
+    if(!raw)return null;
+    const parsed=JSON.parse(raw);
+    const ageMs=Date.now()-new Date(parsed.cachedAt).getTime();
+    if(ageMs>OFFLINE_SESSION_TRUST_MS)return null; // too stale — require a fresh online check-in
+    return parsed;
+  }catch(e){return null;}
+}
+
+// ══════════════════════════════════════════════════════════════
+// OFFLINE DATA INFRASTRUCTURE — read caches + write queue
+// ══════════════════════════════════════════════════════════════
+// Scope for this pass: Fee Payments, Grade entry (Gradebook save), and
+// Bulk SMS (composed offline, sent once reconnected). Everything else
+// in Admin -- creating members/classes/subjects/fee terms, Teacher and
+// Pickup management, Billing, Supplier-equivalent flows, and all the
+// read-only reports -- stays online-only this pass. The Gate itself is
+// a separate, later phase per earlier discussion.
+//
+// For a school with a very large roster, caching ALL scores across
+// every term/class/subject at boot (see cacheOfflineEssentials below)
+// could be a meaningfully large one-time fetch. Acceptable for now;
+// worth revisiting with a narrower per-term cache if it ever becomes
+// slow in practice.
+// ══════════════════════════════════════════════════════════════
+const OFFLINE_DB_NAME='nyansatek_school_offline';
+const OFFLINE_DB_VERSION=2; // v2 adds idMap, for offline-created students (local- IDs resolved once synced)
+let offlineDBPromise=null;
+
+function openOfflineDB(){
+  if(offlineDBPromise)return offlineDBPromise;
+  offlineDBPromise=new Promise((resolve,reject)=>{
+    const req=indexedDB.open(OFFLINE_DB_NAME,OFFLINE_DB_VERSION);
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      ['membersCache','feeTermsCache','classesCache','academicTermsCache','subjectsCache','enrollCache','scoresCache']
+        .forEach(name=>{if(!db.objectStoreNames.contains(name))db.createObjectStore(name,{keyPath:'id'});});
+      // financeQueue: queued Fee Payment / Grade-save / Bulk-SMS / Register
+      // Member writes made offline. Same resumable-step, type-dispatched
+      // pattern used in the POS build.
+      if(!db.objectStoreNames.contains('financeQueue')){
+        const f=db.createObjectStore('financeQueue',{keyPath:'clientRef'});
+        f.createIndex('queuedAt','queuedAt');
+      }
+      // idMap: local- ID -> real server ID, once a queued create syncs.
+      // Only student creation uses this in School (member/class/subject
+      // creation otherwise stays online-only) -- mirrors the same
+      // mechanism POS uses for offline-created products.
+      if(!db.objectStoreNames.contains('idMap'))db.createObjectStore('idMap',{keyPath:'localId'});
+    };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+  return offlineDBPromise;
+}
+
+function isLocalId(id){return typeof id==='string'&&id.indexOf('local-')===0;}
+async function setIdMapping(localId,realId){
+  try{
+    const db=await openOfflineDB();
+    const req=db.transaction('idMap','readwrite').objectStore('idMap').put({localId,realId});
+    return new Promise((resolve,reject)=>{req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error);});
+  }catch(e){console.warn('Could not persist id mapping:',e);}
+}
+async function resolveId(id){
+  if(!isLocalId(id))return id;
+  try{
+    const db=await openOfflineDB();
+    const req=db.transaction('idMap','readonly').objectStore('idMap').get(id);
+    return new Promise((resolve,reject)=>{
+      req.onsuccess=()=>resolve(req.result?req.result.realId:id); // not yet resolved -- caller must handle
+      req.onerror=()=>reject(req.error);
+    });
+  }catch(e){return id;}
+}
+
+function genClientRef(){
+  if(window.crypto&&window.crypto.randomUUID)return window.crypto.randomUUID();
+  return 'cr-'+Date.now()+'-'+Math.random().toString(36).slice(2,10);
+}
+
+// Generic cache write/read for the simple "all rows for this
+// institution" stores above — catalog-style: clear this institution's
+// old rows in that store, then put the fresh set.
+async function cacheRowsOffline(storeName,instId,rows){
+  try{
+    const db=await openOfflineDB();
+    await new Promise((resolve,reject)=>{
+      const t=db.transaction(storeName,'readwrite');
+      const store=t.objectStore(storeName);
+      const clearReq=store.getAll();
+      clearReq.onsuccess=()=>{
+        (clearReq.result||[]).forEach(row=>{if(row.institution_id===instId)store.delete(row.id);});
+        (rows||[]).forEach(r=>store.put(r));
+      };
+      t.oncomplete=()=>resolve();
+      t.onerror=()=>reject(t.error);
+    });
+  }catch(e){console.warn('Could not cache',storeName,e);}
+}
+async function getCachedRowsOffline(storeName,instId){
+  try{
+    const db=await openOfflineDB();
+    return await new Promise((resolve,reject)=>{
+      const req=db.transaction(storeName,'readonly').objectStore(storeName).getAll();
+      req.onsuccess=()=>resolve((req.result||[]).filter(r=>r.institution_id===instId));
+      req.onerror=()=>reject(req.error);
+    });
+  }catch(e){console.warn('Could not read cached',storeName,e);return [];}
+}
+async function persistCachedRow(storeName,row){
+  try{
+    const db=await openOfflineDB();
+    db.transaction(storeName,'readwrite').objectStore(storeName).put(row);
+  }catch(e){/* non-fatal — in-memory arrays are already correct either way */}
+}
+
+function isLikelyNetworkError(err){
+  const m=(err&&err.message||'').toLowerCase();
+  return !navigator.onLine||m.includes('fetch')||m.includes('network')||m.includes('failed to fetch');
+}
+
+// Bulk-refreshes the caches that individual per-class fetches (subjects,
+// class_enrollments, scores) would otherwise never populate until that
+// specific class/term/subject combo had been viewed live at least once.
+// Runs once at the end of initInstitution() so a device that's only
+// ever been online briefly still has a reasonably complete offline set.
+async function cacheOfflineEssentials(){
+  if(!prof?.institution_id)return;
+  try{
+    const[{data:enr},{data:subj},{data:sc}]=await Promise.all([
+      sb.from('class_enrollments').select('*').eq('institution_id',prof.institution_id),
+      sb.from('subjects').select('*').eq('institution_id',prof.institution_id),
+      sb.from('scores').select('*').eq('institution_id',prof.institution_id)
+    ]);
+    if(enr)await cacheRowsOffline('enrollCache',prof.institution_id,enr);
+    if(subj)await cacheRowsOffline('subjectsCache',prof.institution_id,subj);
+    if(sc)await cacheRowsOffline('scoresCache',prof.institution_id,sc);
+  }catch(e){
+    console.warn('Could not refresh offline essentials cache (enrollments/subjects/scores):',e);
+  }
+  // members/feeTerms/classes/academicTerms were just loaded live moments
+  // ago in initInstitution() — cache those too while we're at it.
+  cacheRowsOffline('membersCache',prof.institution_id,members);
+  cacheRowsOffline('feeTermsCache',prof.institution_id,feeTerms);
+  cacheRowsOffline('classesCache',prof.institution_id,classes);
+  cacheRowsOffline('academicTermsCache',prof.institution_id,academicTerms);
+}
+
+function updateOfflineUI(){
+  const ob=document.getElementById('offline-badge');
+  if(ob)ob.classList.toggle('on',!navigator.onLine);
+  queuedFinanceActionCount().then(n=>{
+    const sb2=document.getElementById('sync-badge');
+    if(!sb2)return;
+    sb2.classList.toggle('on',n>0);
+    sb2.innerText=n+(n===1?' item pending sync':' items pending sync');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// FINANCE OFFLINE WRITE QUEUE — Fee Payments, Grade entry, Bulk SMS
+// ══════════════════════════════════════════════════════════════
+// Conflict handling: per the same "one admin, one office" reasoning
+// used for POS, true concurrent edits from two different staff members
+// aren't a realistic scenario here. Fee payments and grade entries are
+// appends/upserts against existing students/classes/terms (no offline
+// creation of new members/classes/subjects in this phase), so there's
+// no local-ID-resolution complexity like POS's offline product
+// creation — every write here references something that already
+// existed before the device went offline.
+// ══════════════════════════════════════════════════════════════
+
+async function queueFinanceAction(record){
+  const db=await openOfflineDB();
+  const full={clientRef:genClientRef(),queuedAt:new Date().toISOString(),applied:false,...record};
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction('financeQueue','readwrite').objectStore('financeQueue').add(full);
+    req.onsuccess=()=>resolve(full);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function getQueuedFinanceActions(){
+  const db=await openOfflineDB();
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction('financeQueue','readonly').objectStore('financeQueue').index('queuedAt').getAll();
+    req.onsuccess=()=>resolve(req.result||[]);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function updateQueuedFinanceAction(rec){
+  const db=await openOfflineDB();
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction('financeQueue','readwrite').objectStore('financeQueue').put(rec);
+    req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error);
+  });
+}
+async function removeQueuedFinanceAction(clientRef){
+  const db=await openOfflineDB();
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction('financeQueue','readwrite').objectStore('financeQueue').delete(clientRef);
+    req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error);
+  });
+}
+async function queuedFinanceActionCount(){
+  try{
+    const db=await openOfflineDB();
+    return new Promise((resolve,reject)=>{
+      const req=db.transaction('financeQueue','readonly').objectStore('financeQueue').count();
+      req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+    });
+  }catch(e){return 0;}
+}
+
+let syncInProgress=false;
+async function drainAllQueues(){await drainFinanceQueue();}
+
+async function drainFinanceQueue(){
+  if(syncInProgress||!navigator.onLine||!prof||!prof.institution_id)return;
+  syncInProgress=true;
+  let synced=0,stillPending=0;
+  try{
+    const queued=await getQueuedFinanceActions();
+    for(const rec of queued){
+      if(!navigator.onLine)break; // connection dropped mid-drain — stop, the timer/next 'online' event will resume
+      try{
+        const done=await syncOneQueuedFinanceAction(rec);
+        if(done)synced++;else stillPending++;
+      }catch(e){
+        console.warn('Sync attempt failed for a queued finance action, will retry later:',e);
+        stillPending++;
+      }
+    }
+  }finally{
+    syncInProgress=false;
+    updateOfflineUI();
+    if(synced>0){
+      // Refresh whatever's currently visible so newly-synced data shows up.
+      if(document.getElementById('tp-fp')?.classList.contains('on'))loadPaymentHistory();
+      if(document.getElementById('tp-gb')?.classList.contains('on')&&gbTermId&&gbClassId&&gbSubjectId)loadGradebook();
+    }
+    if(synced>0||stillPending>0)console.log(`Finance queue sync: ${synced} synced, ${stillPending} still pending.`);
+  }
+}
+
+// Syncs one queued finance write. Four types:
+//  - fee_payment: idempotent insert via client_ref (mirrors POS's
+//    credit_payment pattern). Resolves the student's local ID first, in
+//    case this payment was recorded offline against a student who was
+//    ALSO created offline in the same session (create_member always
+//    sorts earlier in this same chronologically-ordered queue, since it
+//    can't have been selected in the search box before it existed —
+//    so by the time this runs, in the same drain pass, it's normally
+//    already resolved). Receipt printing is skipped for offline
+//    payments — see recordFeePayment() — so nothing to do here beyond
+//    the insert itself.
+//  - score_save: a batch of class/exam scores for one term+class+subject.
+//    scores.upsert with onConflict:'term_id,subject_id,member_id' is
+//    naturally idempotent, so a retry after a partial failure is safe
+//    without any extra bookkeeping. (No local-ID exposure here: a
+//    student can only appear in a gradebook roster via class
+//    enrollment, which stays online-only, so an offline-created
+//    student can never reach this path before syncing.)
+//  - bulk_sms: resumable per-recipient. pendingRecipients shrinks by one
+//    on every successful send, persisted after each one, so a
+//    connection drop mid-send never re-sends to someone who already
+//    got the message, and never skips someone who didn't. (Also no
+//    local-ID exposure: the insert only uses the phone number, not the
+//    student's ID.)
+//  - create_member: registers the student for real and assigns their
+//    permanent sequential ID number (nextCode can finally run, since
+//    this only executes while online). Records local ID -> real ID so
+//    any fee_payment queued against this student resolves correctly.
+async function syncOneQueuedFinanceAction(rec){
+  if(rec.type==='fee_payment'){
+    const p=rec.payload;
+    const realMemberId=await resolveId(p.member_id);
+    if(isLocalId(realMemberId))throw new Error('Student this payment belongs to has not finished syncing yet — will retry.');
+    if(!rec.applied){
+      const{data:existing}=await sb.from('fee_payments').select('id').eq('client_ref',rec.clientRef).maybeSingle();
+      if(!existing){
+        const{error}=await sb.from('fee_payments').insert({
+          institution_id:p.institution_id,member_id:realMemberId,fee_term_id:p.fee_term_id,
+          amount_paid:p.amount_paid,payment_method:p.payment_method,receipt_ref:p.receipt_ref,
+          recorded_by:p.recorded_by,client_ref:rec.clientRef,created_offline:true
+        });
+        if(error)throw error;
+      }
+      rec.applied=true;await updateQueuedFinanceAction(rec);
+    }
+    await removeQueuedFinanceAction(rec.clientRef);
+    return true;
+  }
+
+  if(rec.type==='create_member'){
+    if(!rec.serverMemberId){
+      const p=rec.payload;
+      const code=await nextCode('S','members','member_code');
+      const{data,error}=await sb.from('members').insert({
+        institution_id:p.institution_id,member_code:code,full_name:p.full_name,
+        class_or_dept:p.class_or_dept,gender:p.gender,guardian_name:p.guardian_name,
+        guardian_phone:p.guardian_phone,notify_entry:p.notify_entry,notify_exit:p.notify_exit,
+        photo_url:p.photo_url
+      }).select().single();
+      if(error)throw error;
+      rec.serverMemberId=data.id;
+      await updateQueuedFinanceAction(rec);
+      await setIdMapping(rec.localId,data.id);
+    }
+    await removeQueuedFinanceAction(rec.clientRef);
+    return true;
+  }
+
+  if(rec.type==='score_save'){
+    const p=rec.payload;
+    if(!rec.applied){
+      const{error}=await sb.from('scores').upsert(p.upserts,{onConflict:'term_id,subject_id,member_id'});
+      if(error)throw error;
+      rec.applied=true;await updateQueuedFinanceAction(rec);
+    }
+    await removeQueuedFinanceAction(rec.clientRef);
+    return true;
+  }
+
+  if(rec.type==='bulk_sms'){
+    const p=rec.payload;
+    rec.pendingRecipients=rec.pendingRecipients||p.recipients;
+    while(rec.pendingRecipients.length){
+      if(!navigator.onLine)return false; // connection dropped mid-send — leave queued, resume next pass
+      const r=rec.pendingRecipients[0];
+      const ok=await sendSMS(r.phone,p.message);
+      if(ok){
+        await sb.from('notification_logs').insert({institution_id:p.institution_id,recipient_phone:r.phone,message:p.message});
+      }else{
+        console.warn('Offline bulk SMS: send failed for',r.phone,'— will retry next sync pass.');
+        return false; // leave this (and remaining) recipients queued rather than silently dropping them
+      }
+      rec.pendingRecipients=rec.pendingRecipients.slice(1);
+      await updateQueuedFinanceAction(rec);
+    }
+    await removeQueuedFinanceAction(rec.clientRef);
+    return true;
+  }
+
+  console.warn('Unknown queued finance action type, dropping:',rec.type);
+  await removeQueuedFinanceAction(rec.clientRef);
+  return true;
+}
+
+function manualSync(){
+  if(!navigator.onLine){alert("You're still offline — changes will sync automatically once you're back online.");return;}
+  drainAllQueues();
+}
+
+window.addEventListener('online',()=>{updateOfflineUI();drainAllQueues();});
+window.addEventListener('offline',updateOfflineUI);
+setInterval(()=>{if(navigator.onLine)drainAllQueues();},30000);
+
 // ── CLOCK ─────────────────────────────────────────────────────
 function startClock(){
   const tick=()=>{
@@ -934,18 +1335,88 @@ document.getElementById('fpf').addEventListener('submit',async e=>{
 });
 
 async function handleLogout(){
-  await sb.auth.signOut();sess=null;prof=null;institution=null;scr('l');
+  // Staying signed in works offline, but signing back IN never can (no
+  // way to check a password with no network to check it against) — so
+  // logging out while offline is a real trap. Warn clearly first.
+  if(!navigator.onLine){
+    const proceed=confirm(
+      "You're currently offline. If you log out now, this device won't be able to sign back in until it reconnects to the internet \u2014 staying signed in works offline, but signing back in never can.\n\nLog out anyway?"
+    );
+    if(!proceed)return;
+  }
+  await sb.auth.signOut();sess=null;prof=null;institution=null;
+  try{localStorage.removeItem(OFFLINE_SESSION_KEY);}catch(e){/* non-fatal */}
+  scr('l');
 }
 
 async function boot2(){
   L(true);
-  const{data:{session:s}}=await sb.auth.getSession();sess=s;
-  if(!sess){L(false);scr('l');return;}
-  const{data:p}=await sb.from('inst_profiles').select('*').eq('id',sess.user.id).single();
-  if(!p){L(false);scr('l');return;}
+
+  let sessionResult;
+  try{
+    sessionResult=await sb.auth.getSession();
+  }catch(e){
+    console.warn('getSession() failed (likely offline):',e);
+    sessionResult={data:{session:null}};
+  }
+  sess=sessionResult.data.session;
+
+  // IMPORTANT: sess can be null here even on a device that's logged in
+  // and has a perfectly valid cached session -- getSession() tries to
+  // refresh an expired access token, and that refresh needs a network
+  // round trip. Offline + expired token = session:null, NOT "nobody's
+  // logged in". So a null sess does not, by itself, mean go to the
+  // login screen; it means we can't do the live fetch, and must try
+  // the cache using whatever identity the cache itself remembers.
+  let p=null,inst=null,fromCache=false;
+
+  if(sess){
+    try{
+      const{data,error}=await sb.from('inst_profiles').select('*').eq('id',sess.user.id).single();
+      if(error)throw error;
+      p=data;
+    }catch(e){
+      console.warn('Live profile fetch failed, trying offline cache:',e);
+      const cached=getCachedSessionOffline();
+      if(cached&&cached.profile&&cached.profile.id===sess.user.id){
+        p=cached.profile;inst=cached.institution;fromCache=true;
+      }
+    }
+  }else{
+    // No live session at all. Could genuinely be "never logged in on
+    // this device" -- or "logged in, but offline with an expired token
+    // that can't refresh right now." Only the cache can tell these apart.
+    const cached=getCachedSessionOffline();
+    if(cached&&cached.profile){
+      p=cached.profile;inst=cached.institution;fromCache=true;
+    }
+  }
+  if(!p){
+    L(false);
+    if(!navigator.onLine){
+      alert("You're offline and this device hasn't completed a login here before. Connect to the internet once to sign in — after that, this device can boot offline for up to "+OFFLINE_SESSION_TRUST_DAYS+" days without needing a fresh connection.");
+    }
+    scr('l');
+    return;
+  }
   prof=p;
+
   if(prof.role!=='master'&&prof.institution_id){
-    const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+    if(!fromCache){
+      try{
+        const{data:instData,error:instErr}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+        if(instErr)throw instErr;
+        inst=instData;
+      }catch(e){
+        console.warn('Live institution fetch failed, trying offline cache:',e);
+        const cached=getCachedSessionOffline();
+        if(cached&&cached.institution&&cached.institution.id===prof.institution_id)inst=cached.institution;
+      }
+    }
+    // Suspension is only enforced against institution data we actually
+    // have -- a cached "suspended" flag is honored, but a total absence
+    // of institution data (never cached, or aged past the trust window)
+    // doesn't lock anyone out; enforcement re-applies once back online.
     if(inst&&inst.subscription_status==='suspended'){
       L(false);
       document.getElementById('sus-admin-body').style.display=prof.role==='admin'?'block':'none';
@@ -956,10 +1427,20 @@ async function boot2(){
       scr('x');
       return;
     }
+    if(!fromCache&&inst)cacheSessionOffline(prof,inst);
+  }else if(prof.role==='master'){
+    if(!fromCache)cacheSessionOffline(prof,null);
   }
+
+  // Stash whatever institution data we resolved (live or cached) so
+  // initInstitution()/initParent() don't need to re-fetch it to boot —
+  // they'll still try to refresh it live and update this if they can.
+  institution=inst;
+
   if(prof.must_change_password){L(false);scr('f');return;}
   if(prof.role==='master')await initMaster();else if(prof.role==='parent')await initParent();else await initInstitution();
   L(false);scr('a');
+  if(fromCache)console.log('Booted from cached offline session (device has no live connection right now).');
 }
 
 async function susRenew(){
@@ -1019,12 +1500,19 @@ function buildNav(role){
 // ── INSTITUTION INIT ──────────────────────────────────────────
 async function initInstitution(){
   buildNav(prof.role);
-  const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
-  institution=inst;
-  document.getElementById('hbiz').innerText=inst?.name||'Institution';
-  document.getElementById('fbiz').innerText=inst?.name||'Institution';
-  document.getElementById('gate-inst-name').innerText=inst?.name||'—';
-  document.getElementById('gate-inst-type').innerText=inst?.type?.toUpperCase()||'—';
+  try{
+    const{data:inst,error}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+    if(error)throw error;
+    institution=inst;
+    cacheSessionOffline(prof,institution);
+  }catch(e){
+    console.warn('Could not refresh institution live, using cached copy if available:',e);
+    // institution may already be set from boot2's own fallback -- leave as-is
+  }
+  document.getElementById('hbiz').innerText=institution?.name||'Institution';
+  document.getElementById('fbiz').innerText=institution?.name||'Institution';
+  document.getElementById('gate-inst-name').innerText=institution?.name||'—';
+  document.getElementById('gate-inst-type').innerText=institution?.type?.toUpperCase()||'—';
   if(prof.role==='teacher')await initTeacherScores();
   // Each role lands in its own home view instead of always opening the
   // gate scanner: admin -> Admin panel, teacher -> My Scores, and the
@@ -1032,8 +1520,11 @@ async function initInstitution(){
   const landingView=prof.role==='admin'?'av':prof.role==='teacher'?'sv':'gv';
   swV(landingView);startClock();
   await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();
+  await cacheOfflineEssentials();
   setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
   document.getElementById('scan-input').focus();
+  updateOfflineUI();
+  if(navigator.onLine)drainAllQueues();
 }
 
 function setDef(...ids){const t=td();ids.forEach(id=>{const el=document.getElementById(id);if(el&&!el.value)el.value=t;});}
@@ -1251,9 +1742,30 @@ async function sendSMS(phone,message){
 
 // ── MEMBERS ───────────────────────────────────────────────────
 async function loadMembers(){
-  const{data}=await sb.from('members').select('*')
-    .eq('institution_id',prof.institution_id).order('full_name');
-  members=data||[];
+  try{
+    const{data,error}=await sb.from('members').select('*')
+      .eq('institution_id',prof.institution_id).order('full_name');
+    if(error)throw error;
+    members=data||[];
+    // If any offline-created students are still waiting to sync (a
+    // genuine sync failure, not just being offline right now), keep them
+    // visible here rather than let a normal server refresh silently drop
+    // them — they'll merge into the real list once their queued create
+    // succeeds.
+    try{
+      const pendingCreates=(await getQueuedFinanceActions()).filter(a=>a.type==='create_member'&&a.localId&&!a.serverMemberId);
+      const cached=await getCachedRowsOffline('membersCache',prof.institution_id);
+      pendingCreates.forEach(a=>{
+        const row=cached.find(c=>c.id===a.localId);
+        if(row&&!members.some(m=>m.id===row.id))members.push(row);
+      });
+    }catch(e){/* non-fatal — just a display nicety */}
+    cacheRowsOffline('membersCache',prof.institution_id,members); // fire-and-forget
+  }catch(e){
+    console.warn('Could not load members live, falling back to offline cache:',e);
+    members=await getCachedRowsOffline('membersCache',prof.institution_id);
+    members.sort((a,b)=>a.full_name.localeCompare(b.full_name));
+  }
   renderMemberList(members);
   // Populate payment search
   const sel=document.getElementById('fp-term');
@@ -1261,6 +1773,7 @@ async function loadMembers(){
     sel.innerHTML='<option value="">-- Select Term --</option>';
     feeTerms.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.text=t.term_name;sel.appendChild(o);});
   }
+  updateOfflineUI();
 }
 
 function renderMemberList(list){
@@ -1293,23 +1806,66 @@ async function saveMember(){
   const ne=document.getElementById('mb-nentry').checked;
   const nx=document.getElementById('mb-nexit').checked;
   if(!name){alert('Full name is required.');return;}
+
+  const resetForm=()=>{
+    ['mb-name','mb-dept','mb-gname','mb-gphone'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('mb-gender').value='';
+    mbPhoto=null;document.getElementById('mb-photo-preview').style.display='none';document.getElementById('mb-photo-hint').style.display='block';
+  };
+
+  const goOffline=async()=>{
+    // nextCode() needs a live query to count existing member codes, so
+    // it can't run offline. The temporary code below is clearly marked
+    // as pending and gets replaced with a real sequential {PREFIX}_S_000N
+    // code automatically once this sync's create runs online (see
+    // syncOneQueuedFinanceAction's 'create_member' branch) — unlike Fee
+    // Payment's offline receipt ref, which stays as-is permanently,
+    // this one can safely be swapped since nobody prints/shares a
+    // student ID at the moment of registration.
+    const localId='local-'+genClientRef();
+    const tempCode=schoolInitials()+'_S_OFFLINE-'+Math.floor(10000+Math.random()*90000);
+    const localRow={
+      id:localId,institution_id:prof.institution_id,member_code:tempCode,full_name:name,
+      class_or_dept:dept||null,gender:gender||null,guardian_name:gname||null,
+      guardian_phone:gphone||null,notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null,
+      is_active:true,created_at:new Date().toISOString()
+    };
+    members.push(localRow);
+    await persistCachedRow('membersCache',localRow);
+    await queueFinanceAction({
+      type:'create_member',localId,
+      payload:{institution_id:prof.institution_id,full_name:name,class_or_dept:dept||null,
+        gender:gender||null,guardian_name:gname||null,guardian_phone:gphone||null,
+        notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null}
+    });
+    resetForm();renderMemberList(members);updateOfflineUI();
+    alert(`You're offline — "${name}" has been saved on this device (temporary ID: ${tempCode}) and will sync once you're back online, when a permanent ID number is assigned.`);
+  };
+
+  if(!navigator.onLine){await goOffline();return;}
+
   L(true);
   let code='',error,attempts=0;
-  do{
-    code=await nextCode('S','members','member_code');
-    ({error}=await sb.from('members').insert({
-      institution_id:prof.institution_id,
-      member_code:code,full_name:name,class_or_dept:dept||null,gender:gender||null,
-      guardian_name:gname||null,guardian_phone:gphone||null,
-      notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null
-    }));
-    attempts++;
-  }while(error&&/duplicate|unique/i.test(error.message||'')&&attempts<4);
+  try{
+    do{
+      code=await nextCode('S','members','member_code');
+      ({error}=await sb.from('members').insert({
+        institution_id:prof.institution_id,
+        member_code:code,full_name:name,class_or_dept:dept||null,gender:gender||null,
+        guardian_name:gname||null,guardian_phone:gphone||null,
+        notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null
+      }));
+      attempts++;
+    }while(error&&/duplicate|unique/i.test(error.message||'')&&attempts<4);
+    if(error)throw error;
+  }catch(err){
+    L(false);
+    if(isLikelyNetworkError(err)){await goOffline();return;}
+    alert('Error: '+err.message);
+    return;
+  }
   L(false);
-  if(error){alert('Error: '+error.message);return;}
-  ['mb-name','mb-dept','mb-gname','mb-gphone'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('mb-gender').value='';
-  mbPhoto=null;document.getElementById('mb-photo-preview').style.display='none';document.getElementById('mb-photo-hint').style.display='block';
+  resetForm();
   await loadMembers();alert('Member registered! ID Number: '+code);
 }
 
@@ -1535,9 +2091,17 @@ async function createParentAccount(){
 
 // ── FEE TERMS ─────────────────────────────────────────────────
 async function loadFeeTerms(){
-  const{data}=await sb.from('fee_terms').select('*')
-    .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
-  feeTerms=data||[];
+  try{
+    const{data,error}=await sb.from('fee_terms').select('*')
+      .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
+    if(error)throw error;
+    feeTerms=data||[];
+    cacheRowsOffline('feeTermsCache',prof.institution_id,feeTerms);
+  }catch(e){
+    console.warn('Could not load fee terms live, falling back to offline cache:',e);
+    feeTerms=await getCachedRowsOffline('feeTermsCache',prof.institution_id);
+    feeTerms.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  }
   renderFeeTermList();
   const sel=document.getElementById('fp-term');
   sel.innerHTML='<option value="">-- Select Term --</option>';
@@ -1602,22 +2166,52 @@ async function recordFeePayment(){
   const amt=parseFloat(document.getElementById('fp-amt').value)||0;
   const pm=document.getElementById('fp-pm').value;
   if(!termId||amt<=0){alert('Select a fee term and enter an amount.');return;}
+
+  const resetForm=()=>{
+    selMemberId=null;
+    document.getElementById('fp-msch').value='';document.getElementById('fp-msel').innerText='';
+    document.getElementById('fp-amt').value='';
+  };
+
+  const goOffline=async()=>{
+    // nextCode() needs a live query to count existing receipt refs, so
+    // it can't run offline — use a locally-generated reference instead,
+    // same style as POS's offline invoice numbers. It's a real, usable
+    // reference; it's just outside the sequential FPR-000N series until
+    // this payment syncs.
+    const ref='FPR-OFFLINE-'+Math.floor(10000+Math.random()*90000);
+    await queueFinanceAction({
+      type:'fee_payment',
+      payload:{institution_id:prof.institution_id,member_id:selMemberId,fee_term_id:termId,
+        amount_paid:amt,payment_method:pm,receipt_ref:ref,recorded_by:prof.id}
+    });
+    resetForm();updateOfflineUI();
+    alert("You're offline — payment saved on this device (Ref: "+ref+") and will sync once you're back online. Receipt printing is available once it's synced.");
+  };
+
+  if(!navigator.onLine){await goOffline();return;}
+
   L(true);
   let ins,error,attempts=0;
-  do{
-    const ref=await nextCode('FPR','fee_payments','receipt_ref');
-    ({data:ins,error}=await sb.from('fee_payments').insert({
-      institution_id:prof.institution_id,member_id:selMemberId,
-      fee_term_id:termId,amount_paid:amt,payment_method:pm,
-      receipt_ref:ref,recorded_by:prof.id
-    }).select().single());
-    attempts++;
-  }while(error&&/duplicate|unique/i.test(error.message||'')&&attempts<4);
+  try{
+    do{
+      const ref=await nextCode('FPR','fee_payments','receipt_ref');
+      ({data:ins,error}=await sb.from('fee_payments').insert({
+        institution_id:prof.institution_id,member_id:selMemberId,
+        fee_term_id:termId,amount_paid:amt,payment_method:pm,
+        receipt_ref:ref,recorded_by:prof.id
+      }).select().single());
+      attempts++;
+    }while(error&&/duplicate|unique/i.test(error.message||'')&&attempts<4);
+    if(error)throw error;
+  }catch(err){
+    L(false);
+    if(isLikelyNetworkError(err)){await goOffline();return;}
+    alert('Error: '+err.message);
+    return;
+  }
   L(false);
-  if(error){alert('Error: '+error.message);return;}
-  selMemberId=null;
-  document.getElementById('fp-msch').value='';document.getElementById('fp-msel').innerText='';
-  document.getElementById('fp-amt').value='';
+  resetForm();
   await loadPaymentHistory();
   if(confirm('Payment recorded! Print receipt now?'))await printReceipt(ins.id);
 }
@@ -1999,9 +2593,17 @@ function ordinal(n){const s=['th','st','nd','rd'];const v=n%100;return n+(s[(v-2
 // ── ACADEMIC TERMS ────────────────────────────────────────────
 async function loadAcademicTerms(){
   if(!prof?.institution_id)return;
-  const{data}=await sb.from('academic_terms').select('*')
-    .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
-  academicTerms=data||[];
+  try{
+    const{data,error}=await sb.from('academic_terms').select('*')
+      .eq('institution_id',prof.institution_id).order('created_at',{ascending:false});
+    if(error)throw error;
+    academicTerms=data||[];
+    cacheRowsOffline('academicTermsCache',prof.institution_id,academicTerms);
+  }catch(e){
+    console.warn('Could not load academic terms live, falling back to offline cache:',e);
+    academicTerms=await getCachedRowsOffline('academicTermsCache',prof.institution_id);
+    academicTerms.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  }
   renderAcademicTermList();
   ['gb-term','rc-term','enr-term','rp-term'].forEach(id=>{
     const sel=document.getElementById(id);if(!sel)return;
@@ -2037,8 +2639,16 @@ async function saveAcademicTerm(){
 // ── CLASSES ───────────────────────────────────────────────────
 async function loadClasses(){
   if(!prof?.institution_id)return;
-  const{data}=await sb.from('school_classes').select('*').eq('institution_id',prof.institution_id).order('class_name');
-  classes=data||[];
+  try{
+    const{data,error}=await sb.from('school_classes').select('*').eq('institution_id',prof.institution_id).order('class_name');
+    if(error)throw error;
+    classes=data||[];
+    cacheRowsOffline('classesCache',prof.institution_id,classes);
+  }catch(e){
+    console.warn('Could not load classes live, falling back to offline cache:',e);
+    classes=await getCachedRowsOffline('classesCache',prof.institution_id);
+    classes.sort((a,b)=>a.class_name.localeCompare(b.class_name));
+  }
   renderClassList2();
   ['subj-class','enr-class','gb-class','rc-class','bs-class','rp-class','rp-roster-class','rp-fclass'].forEach(id=>{
     const sel=document.getElementById(id);if(!sel)return;
@@ -2107,8 +2717,15 @@ async function loadSubjectsForClass(classId){
 }
 async function loadSubjectsForGb(classId){
   if(!classId)return;
-  const{data}=await sb.from('subjects').select('*').eq('class_id',classId).order('subject_name');
-  subjects=data||[];
+  try{
+    const{data,error}=await sb.from('subjects').select('*').eq('class_id',classId).order('subject_name');
+    if(error)throw error;
+    subjects=data||[];
+  }catch(e){
+    console.warn('Could not load subjects live, falling back to offline cache:',e);
+    const all=await getCachedRowsOffline('subjectsCache',prof.institution_id);
+    subjects=all.filter(s=>s.class_id===classId).sort((a,b)=>a.subject_name.localeCompare(b.subject_name));
+  }
   const sel=document.getElementById('gb-subj');if(!sel)return;
   sel.innerHTML='<option value="">-- Select Subject --</option>';
   subjects.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.text=s.subject_name;sel.appendChild(o);});
@@ -2167,12 +2784,25 @@ async function loadGradebook(){
   gbSubjectId=document.getElementById('gb-subj').value;
   if(!gbTermId||!gbClassId||!gbSubjectId){alert('Select term, class and subject.');return;}
   L(true);
-  const[{data:enr},{data:sc}]=await Promise.all([
-    sb.from('class_enrollments').select('*,members(id,full_name,member_code)').eq('class_id',gbClassId),
-    sb.from('scores').select('*').eq('term_id',gbTermId).eq('class_id',gbClassId).eq('subject_id',gbSubjectId)
-  ]);
+  let students,sc;
+  try{
+    const[{data:enr,error:enrErr},{data:scData,error:scErr}]=await Promise.all([
+      sb.from('class_enrollments').select('*,members(id,full_name,member_code)').eq('class_id',gbClassId),
+      sb.from('scores').select('*').eq('term_id',gbTermId).eq('class_id',gbClassId).eq('subject_id',gbSubjectId)
+    ]);
+    if(enrErr)throw enrErr;
+    if(scErr)throw scErr;
+    students=(enr||[]).map(e=>e.members).filter(Boolean);
+    sc=scData;
+  }catch(e){
+    console.warn('Could not load gradebook live, falling back to offline cache:',e);
+    const enrCache=(await getCachedRowsOffline('enrollCache',prof.institution_id)).filter(r=>r.class_id===gbClassId);
+    students=enrCache.map(r=>members.find(m=>m.id===r.member_id)).filter(Boolean);
+    const scCache=await getCachedRowsOffline('scoresCache',prof.institution_id);
+    sc=scCache.filter(s=>s.term_id===gbTermId&&s.class_id===gbClassId&&s.subject_id===gbSubjectId);
+  }
   L(false);
-  const students=(enr||[]).map(e=>e.members).filter(Boolean).sort((a,b)=>a.full_name.localeCompare(b.full_name));
+  students=students.sort((a,b)=>a.full_name.localeCompare(b.full_name));
   const scoreMap={};(sc||[]).forEach(s=>scoreMap[s.member_id]=s);
   renderGradebook(students,scoreMap);
 }
@@ -2232,10 +2862,42 @@ async function saveAllScores(){
       subject_id:gbSubjectId,member_id:mid,class_score:cs,exam_score:es,recorded_by:prof.id});
   });
   if(!upserts.length)return;
+
+  const goOffline=async()=>{
+    await queueFinanceAction({type:'score_save',payload:{upserts}});
+    // Optimistic local cache update (keyed synthetically per term+subject
+    // +student, so repeated offline edits overwrite rather than pile up)
+    // so reopening this gradebook offline shows the just-entered scores.
+    // This synthetic entry gets cleaned up automatically the next time
+    // the device is online and cacheOfflineEssentials() refreshes the
+    // real scores from the server.
+    for(const u of upserts){
+      const fs=Math.round((u.class_score*0.3+u.exam_score*0.7)*10)/10;
+      await persistCachedRow('scoresCache',{
+        id:'local-score-'+u.term_id+'-'+u.subject_id+'-'+u.member_id,
+        institution_id:prof.institution_id,term_id:u.term_id,class_id:u.class_id,
+        subject_id:u.subject_id,member_id:u.member_id,class_score:u.class_score,
+        exam_score:u.exam_score,final_score:fs,recorded_by:u.recorded_by
+      });
+    }
+    updateOfflineUI();
+    await loadGradebook();
+    alert("You're offline — scores saved on this device and will sync once you're back online.");
+  };
+
+  if(!navigator.onLine){await goOffline();return;}
+
   L(true);
-  const{error}=await sb.from('scores').upsert(upserts,{onConflict:'term_id,subject_id,member_id'});
-  L(false);if(error){alert('Error saving scores: '+error.message);return;}
-  await loadGradebook();alert('All scores saved successfully!');
+  try{
+    const{error}=await sb.from('scores').upsert(upserts,{onConflict:'term_id,subject_id,member_id'});
+    if(error)throw error;
+    L(false);
+    await loadGradebook();alert('All scores saved successfully!');
+  }catch(err){
+    L(false);
+    if(isLikelyNetworkError(err)){await goOffline();}
+    else{alert('Error saving scores: '+err.message);}
+  }
 }
 
 // ── REPORT CARDS ──────────────────────────────────────────────
@@ -2650,14 +3312,53 @@ async function sendBulkSMS2(){
   const classId=document.getElementById('bs-class').value;
   const msg=document.getElementById('bs-msg').value.trim();
   if(!msg){alert('Please type a message first.');return;}
-  let recipients=members.filter(m=>m.guardian_phone&&m.is_active);
-  if(classId){
-    const{data:enr}=await sb.from('class_enrollments').select('member_id').eq('class_id',classId);
-    const ids=new Set((enr||[]).map(e=>e.member_id));
-    recipients=recipients.filter(m=>ids.has(m.id));
+
+  const resetForm=()=>{
+    document.getElementById('bs-msg').value='';
+    document.getElementById('bs-count').innerText='0 characters';
+  };
+
+  // Recipient list is built the same way whether online or offline —
+  // from the in-memory `members` array (which itself has a cache
+  // fallback via loadMembers()) filtered by class enrollment if a class
+  // was chosen. The only difference offline is where that enrollment
+  // filter's data comes from: a live query, or the enrollCache built by
+  // cacheOfflineEssentials() at boot.
+  async function buildRecipients(){
+    let list=members.filter(m=>m.guardian_phone&&m.is_active);
+    if(classId){
+      let ids;
+      try{
+        const{data:enr,error}=await sb.from('class_enrollments').select('member_id').eq('class_id',classId);
+        if(error)throw error;
+        ids=new Set((enr||[]).map(e=>e.member_id));
+      }catch(e){
+        console.warn('Could not load class enrollments live, falling back to offline cache:',e);
+        const cached=await getCachedRowsOffline('enrollCache',prof.institution_id);
+        ids=new Set(cached.filter(r=>r.class_id===classId).map(r=>r.member_id));
+      }
+      list=list.filter(m=>ids.has(m.id));
+    }
+    return list;
   }
+
+  const recipients=await buildRecipients();
   if(!recipients.length){alert('No members with guardian phone numbers found.');return;}
   if(!confirm('Send SMS to '+recipients.length+' guardian(s)?'))return;
+
+  if(!navigator.onLine){
+    await queueFinanceAction({
+      type:'bulk_sms',
+      payload:{
+        institution_id:prof.institution_id,message:msg,class_id:classId||null,
+        recipients:recipients.map(m=>({member_id:m.id,phone:m.guardian_phone}))
+      }
+    });
+    resetForm();updateOfflineUI();
+    alert("You're offline — this message has been saved on this device and will send automatically to all "+recipients.length+" guardian(s) once you're back online.");
+    return;
+  }
+
   L(true);
   let sent=0,failed=0;
   for(const m of recipients){
@@ -2670,8 +3371,7 @@ async function sendBulkSMS2(){
     }
   }
   L(false);
-  document.getElementById('bs-msg').value='';
-  document.getElementById('bs-count').innerText='0 characters';
+  resetForm();
   alert('Sent to '+sent+' guardian(s).'+(failed?' Failed: '+failed:''));
 }
 
@@ -3402,11 +4102,26 @@ document.addEventListener('click',e=>{
 });
 
 // Boot
+// Delegates entirely to boot2(), which now handles every combination of
+// {live session / no live session} x {online / offline} x {ever logged
+// in on this device / not} on its own (see the block comment inside
+// boot2). The old version of this IIFE gated on getSession()'s result
+// directly and skipped boot2() entirely whenever it returned session:
+// null -- exactly what happens on a device with an expired access token
+// and no connection to refresh it. That caused refreshing while offline
+// to always bounce to the login screen, even right after a prior
+// successful online login on that same device (same bug found and
+// fixed in the POS app).
 (async function(){
-  L(true);
-  const{data:{session:s}}=await sb.auth.getSession();L(false);
-  if(s)await boot2();else scr('l');
+  await boot2();
 })();
+
+// PWA: register service worker so the app is installable and can load offline
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW registration failed:',err));
+  });
+}
 </script>
 </body>
 </html>
