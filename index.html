@@ -20,6 +20,7 @@ const BILLING_API_BASE = "https://nyansatek.systems/.netlify/functions"; // rene
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://js.paystack.co/v2/inline.js"></script>
@@ -55,6 +56,7 @@ main{flex:1;overflow:hidden;}
 
 /* GATE VIEW */
 #gv.on{display:flex;flex-direction:column;height:calc(100vh - 52px - 36px);background:#0f172a;}
+#busv.on{display:flex;flex-direction:column;height:calc(100vh - 52px - 36px);background:#0f172a;}
 .gate-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1e293b;}
 .gate-inst{font-size:1rem;font-weight:700;color:#fff;}
 .gate-time{font-size:1.6rem;font-weight:700;color:var(--a);font-family:'Courier New',monospace;}
@@ -318,6 +320,45 @@ footer strong{color:var(--a);}
       </div>
     </div>
 
+    <!-- BUS VIEW -->
+    <div id="busv" class="view">
+      <div class="gate-header">
+        <div>
+          <div class="gate-inst" id="bus-inst-name">—</div>
+          <div style="font-size:.72rem;color:var(--g);margin-top:2px;">Bus Scanning</div>
+        </div>
+        <div style="text-align:center;">
+          <div class="gate-mode">
+            <button class="mode-btn on" id="bus-mode-entry" onclick="setBusMode('entry')">&#8680; BOARDING</button>
+            <button class="mode-btn" id="bus-mode-exit" onclick="setBusMode('exit')">&#8678; DROP-OFF</button>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div class="gate-time" id="bus-gtime">00:00:00</div>
+          <div class="gate-date" id="bus-gdate">—</div>
+        </div>
+      </div>
+
+      <div style="padding:14px 20px;">
+        <div class="fg" style="max-width:360px;margin:0 auto 14px;">
+          <label style="color:var(--g);">Bus / Route *</label>
+          <select id="bus-select" onchange="selectedBusId=this.value;" style="background:#1e293b;color:#fff;border-color:#334155;">
+            <option value="">-- Select Bus --</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="scan-zone" style="padding-top:0;">
+        <div class="scan-box" style="max-width:420px;">
+          <video id="bus-video" autoplay playsinline muted style="width:100%;border-radius:10px;background:#000;display:block;"></video>
+          <canvas id="bus-canvas" style="display:none;"></canvas>
+          <div class="scan-label" style="margin-top:10px;">Point the camera at the student's ID card QR code</div>
+          <input type="text" id="bus-scan-input" placeholder="Or type ID code manually..." autocomplete="off" autocorrect="off" style="margin-top:8px;">
+        </div>
+        <div class="last-scan" id="bus-last-scan">No scans yet today.</div>
+      </div>
+    </div>
+
     <!-- ADMIN VIEW -->
     <div id="av" class="view">
       <div class="card">
@@ -331,6 +372,7 @@ footer strong{color:var(--a);}
           <button class="tb" onclick="swTab('nl')">&#128241; Notifications</button>
           <button class="tb" onclick="swTab('at')">&#128197; Acad. Terms</button>
           <button class="tb" onclick="swTab('cl')">&#127979; Classes</button>
+          <button class="tb" onclick="swTab('bus')">&#128652; Buses</button>
           <button class="tb" onclick="swTab('gb')">&#128221; Gradebook</button>
           <button class="tb" onclick="swTab('rc')">&#128203; Report Cards</button>
           <button class="tb" onclick="swTab('rp')">&#128196; Reports</button>
@@ -550,6 +592,25 @@ footer strong{color:var(--a);}
               <div id="cllist"><div class="es">No classes yet.</div></div>
               <h3 style="font-size:.88rem;margin:14px 0 10px;color:var(--p);">Subjects</h3>
               <div id="subjlist"><div class="es">Select a class above to see its subjects.</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BUSES -->
+        <div class="tp" id="tp-bus">
+          <div class="admin-grid">
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Bus / Route</h3>
+              <p class="hint">Staff scanning students onto a bus will pick from this list — no student-to-bus assignment yet, any active bus can be used to scan any student.</p>
+              <div class="fg"><label>Bus / Route Name *</label>
+                <input type="text" id="bus-name" placeholder="e.g. Bus 3 or Spintex Route"></div>
+              <div class="fg"><label>Driver Name (optional)</label>
+                <input type="text" id="bus-driver"></div>
+              <button class="btn bf" onclick="saveBus()">Create Bus</button>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Buses</h3>
+              <div id="buslist"><div class="es">Loading...</div></div>
             </div>
           </div>
         </div>
@@ -1300,10 +1361,16 @@ setInterval(()=>{if(navigator.onLine)drainAllQueues();},30000);
 function startClock(){
   const tick=()=>{
     const now=new Date();
+    const timeStr=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const dateStr=now.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short',year:'numeric'});
     const el=document.getElementById('gtime');
     const de=document.getElementById('gdate');
-    if(el)el.innerText=now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    if(de)de.innerText=now.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+    if(el)el.innerText=timeStr;
+    if(de)de.innerText=dateStr;
+    const bel=document.getElementById('bus-gtime');
+    const bde=document.getElementById('bus-gdate');
+    if(bel)bel.innerText=timeStr;
+    if(bde)bde.innerText=dateStr;
   };
   tick();setInterval(tick,1000);
 }
@@ -1473,10 +1540,11 @@ function swV(v){
   document.querySelectorAll('.view').forEach(el=>{el.style.display='none';el.classList.remove('on');});
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));
   const el=document.getElementById(v);
-  if(el){el.style.display=v==='gv'?'flex':'block';el.classList.add('on');}
+  if(el){el.style.display=(v==='gv'||v==='busv')?'flex':'block';el.classList.add('on');}
   const b=document.getElementById('t-'+v);if(b)b.classList.add('on');
   if(v==='gv')setTimeout(()=>document.getElementById('scan-input')?.focus(),100);
   if(v==='bv')loadBillingInfo();
+  if(v==='busv')initBusView();else stopBusCamera();
 }
 
 function buildNav(role){
@@ -1484,12 +1552,12 @@ function buildNav(role){
   const tabs=role==='master'
     ?[['mv','Overview']]
     :role==='admin'
-    ?[['gv','Gate'],['av','Admin'],['bv','Billing']]
+    ?[['gv','Gate'],['busv','Bus'],['av','Admin'],['bv','Billing']]
     :role==='teacher'
     ?[['gv','Gate'],['sv','My Scores']]
     :role==='parent'
     ?[['pv','My Children']]
-    :[['gv','Gate']];
+    :[['gv','Gate'],['busv','Bus']];
   tabs.forEach(([k,l],i)=>{
     const b=document.createElement('button');b.id='t-'+k;b.innerText=l;
     if(i===0)b.classList.add('on');b.onclick=()=>swV(k);nav.appendChild(b);
@@ -1519,7 +1587,7 @@ async function initInstitution(){
   // dedicated gate-keeper role (no elevated role) -> the Gate itself.
   const landingView=prof.role==='admin'?'av':prof.role==='teacher'?'sv':'gv';
   swV(landingView);startClock();
-  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();
+  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();
   await cacheOfflineEssentials();
   setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
   document.getElementById('scan-input').focus();
@@ -1723,6 +1791,162 @@ function showResult(r){
       document.getElementById('scan-input').focus();
     }
   },1000);
+}
+
+// ══════════════════════════════════════════════════════════════
+// BUS SCANNING — camera-based QR reading for portable/bus use
+// ══════════════════════════════════════════════════════════════
+// Reuses the exact same ID-card QR codes the Gate already relies on
+// (they just encode member_code as plain text) and the same
+// showResult() overlay Gate uses — this file briefly points the
+// shared `scanMode` variable at whatever mode Bus is in right before
+// calling showResult(), so the overlay's Entry/Exit wording comes out
+// right without needing a second copy of that ~40-line function.
+// Phase 1 scope: online only (see chat) — no student-to-bus
+// assignment check, any active bus can scan any student.
+let busScanMode='entry',selectedBusId=null,busCameraStream=null,busScanLoopActive=false;
+let busLastCode=null,busLastScanTime=0;
+
+function setBusMode(m){
+  busScanMode=m;
+  ['entry','exit'].forEach(x=>{
+    const b=document.getElementById('bus-mode-'+x);
+    if(b){b.classList.toggle('on',x===m);
+      b.style.background=x===m?'#d4af37':'none';
+      b.style.color=x===m?'#111827':'var(--g)';}
+  });
+}
+
+function initBusView(){
+  populateBusSelect();
+  if(institution)document.getElementById('bus-inst-name').innerText=institution.name||'—';
+  startBusCamera();
+}
+
+async function startBusCamera(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    console.warn('Camera not supported — manual code entry only.');
+    return;
+  }
+  try{
+    busCameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video=document.getElementById('bus-video');
+    video.srcObject=busCameraStream;
+    await video.play();
+    busScanLoopActive=true;
+    requestAnimationFrame(busScanTick);
+  }catch(e){
+    console.warn('Bus camera error:',e);
+    // Not a blocking alert -- the manual code entry field is always
+    // available right below the viewfinder, so a denied/unavailable
+    // camera degrades gracefully rather than stopping the bus staffer
+    // from working.
+  }
+}
+function stopBusCamera(){
+  busScanLoopActive=false;
+  if(busCameraStream){busCameraStream.getTracks().forEach(t=>t.stop());busCameraStream=null;}
+}
+function busScanTick(){
+  if(!busScanLoopActive)return;
+  const video=document.getElementById('bus-video');
+  const canvas=document.getElementById('bus-canvas');
+  if(video&&video.readyState===video.HAVE_ENOUGH_DATA&&typeof jsQR!=='undefined'){
+    canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const code=jsQR(imageData.data,imageData.width,imageData.height);
+    if(code&&code.data)handleBusQRDetected(code.data.trim());
+  }
+  requestAnimationFrame(busScanTick);
+}
+function handleBusQRDetected(text){
+  // Debounce: ignore the same code re-detected within 8s so a card
+  // held in frame for a moment doesn't log two boardings. The camera
+  // loop itself never pauses -- simpler and more robust than trying
+  // to pause/resume it around the result overlay's countdown.
+  const now=Date.now();
+  if(text===busLastCode&&(now-busLastScanTime)<8000)return;
+  busLastCode=text;busLastScanTime=now;
+  processBusScan(text);
+}
+document.getElementById('bus-scan-input').addEventListener('keypress',e=>{
+  if(e.key==='Enter'){
+    const code=e.target.value.trim();
+    if(code){e.target.value='';processBusScan(code);}
+  }
+});
+
+async function processBusScan(code){
+  if(!selectedBusId){alert('Select a bus/route above before scanning.');return;}
+  const member=members.find(m=>m.member_code.toLowerCase()===code.toLowerCase());
+  if(!member){
+    scanMode=busScanMode;
+    showResult({allowed:false,member:null,code,reason:'ID not found in system',balance:null,phone:null});
+    updateBusLastScan('Unknown ID: '+code,false);
+    return;
+  }
+
+  let allowed=true,reason='',feeBalance=null,feeDisplay='';
+  if(institution?.type==='school'&&busScanMode==='entry'){
+    const feeCheck=await checkFeeStatus(member.id);
+    feeBalance=feeCheck.balance;
+    if(feeCheck.status==='outstanding'){
+      allowed=false;reason='Outstanding fees: '+GH(feeBalance);feeDisplay=feeCheck.status;
+    }else if(feeCheck.status==='no_term'){
+      allowed=true;feeDisplay='No active term';
+    }else{
+      feeDisplay='Fully Paid';
+    }
+  }
+
+  const{data:log}=await sb.from('attendance_logs').insert({
+    institution_id:prof.institution_id,member_id:member.id,event_type:busScanMode,
+    status:allowed?'allowed':'denied',deny_reason:reason||null,fee_balance:feeBalance,
+    guardian_phone:member.guardian_phone||null,notification_sent:false,
+    source:'bus',bus_id:selectedBusId
+  }).select().single();
+
+  let notified='None';
+  const shouldNotify=(allowed&&member.notify_entry&&busScanMode==='entry')||
+                     (allowed&&member.notify_exit&&busScanMode==='exit')||
+                     (!allowed);
+  if(shouldNotify&&member.guardian_phone){
+    const busName=busList.find(b=>b.id===selectedBusId)?.name||'the school bus';
+    const msg=buildBusNotifMsg(member,allowed,feeBalance,busName);
+    await sendSMS(member.guardian_phone,msg);
+    if(log)await sb.from('attendance_logs').update({notification_sent:true}).eq('id',log.id);
+    await sb.from('notification_logs').insert({
+      institution_id:prof.institution_id,attendance_log_id:log?.id||null,
+      recipient_phone:member.guardian_phone,message:msg
+    });
+    notified=member.guardian_phone;
+  }
+
+  scanMode=busScanMode; // showResult() reads the shared scanMode for its Entry/Exit label
+  showResult({allowed,member,code,reason,balance:feeBalance,feeDisplay,phone:notified});
+  updateBusLastScan(member.full_name+' — '+(allowed?'ALLOWED':'DENIED'),true);
+}
+
+function updateBusLastScan(text,withTime){
+  const ls=document.getElementById('bus-last-scan');
+  if(!ls)return;
+  const ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  ls.innerText=withTime?`Last: ${text} — ${ts}`:text;
+}
+
+function buildBusNotifMsg(member,allowed,balance,busName){
+  const inst=institution?.name||'Institution';
+  const time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const date=new Date().toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
+  if(!allowed){
+    return `URGENT - ${inst}: ${member.full_name} was DENIED boarding ${busName} at ${time} on ${date} due to outstanding fees of ${GHP(balance||0)}. Please contact the school office immediately. - NYANSATEK`;
+  }
+  if(busScanMode==='exit'){
+    return `${inst}: ${member.full_name} was dropped off from ${busName} at ${time} on ${date}. - NYANSATEK`;
+  }
+  return `${inst}: ${member.full_name} boarded ${busName} at ${time} on ${date} and is on the way to school. - NYANSATEK`;
 }
 
 // ── SMS ───────────────────────────────────────────────────────
@@ -2357,7 +2581,7 @@ async function loadNotifHistory(){
 
 // ── ADMIN TABS ────────────────────────────────────────────────
 function swTab(tab){
-  const order=['mb','sp','ft','fp','ar','nl','at','cl','gb','rc','rp','bs','pu','ts'];
+  const order=['mb','sp','ft','fp','ar','nl','at','cl','bus','gb','rc','rp','bs','pu','ts'];
   order.forEach(t=>{
     const p=document.getElementById('tp-'+t);if(p)p.classList.toggle('on',t===tab);
   });
@@ -2368,6 +2592,7 @@ function swTab(tab){
   if(tab==='nl')loadNotifHistory();
   if(tab==='at'){loadAcademicTerms();}
   if(tab==='cl'){loadTeacherList().then(loadClasses);}
+  if(tab==='bus'){loadBuses();}
   if(tab==='rp'){loadFeeTerms();refreshRenumberCard();}
   if(tab==='pu'){loadTeacherList();}
   if(tab==='ts'){loadTeacherList().then(()=>{populateTsClassSel();loadTeacherAssignmentList();renderTeacherProfileSelect();});loadTeacherAccountsList();}
@@ -2702,6 +2927,65 @@ async function saveClass(){
   document.getElementById('cl-name').value='';document.getElementById('cl-teacher').value='';
   await loadClasses();alert('Class created!');
 }
+
+// ── BUSES ─────────────────────────────────────────────────────
+let busList=[];
+async function loadBuses(){
+  if(!prof?.institution_id)return;
+  L(true);
+  const{data,error}=await sb.from('buses').select('*')
+    .eq('institution_id',prof.institution_id).order('name');
+  L(false);
+  if(error){
+    document.getElementById('buslist').innerHTML=`<div class="es" style="color:var(--d);">${E(error.message)}</div>`;
+    return;
+  }
+  busList=data||[];
+  renderBusList();
+  populateBusSelect();
+}
+function renderBusList(){
+  const c=document.getElementById('buslist');if(!c)return;
+  if(!busList.length){c.innerHTML='<div class="es">No buses yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Bus / Route</th><th>Driver</th><th>Status</th><th></th></tr></thead>
+  <tbody>${busList.map(b=>`<tr>
+    <td><strong>${E(b.name)}</strong></td>
+    <td style="color:var(--g);">${E(b.driver_name||'—')}</td>
+    <td><span class="badge ${b.is_active?'bg':'br'}">${b.is_active?'Active':'Inactive'}</span></td>
+    <td>${b.is_active
+      ?`<button class="btn bsm" style="color:var(--d);border-color:var(--d);" onclick="setBusStatus('${b.id}',false)">Deactivate</button>`
+      :`<button class="btn bsm" style="color:var(--s);border-color:var(--s);" onclick="setBusStatus('${b.id}',true)">Reactivate</button>`}
+    </td>
+  </tr>`).join('')}</tbody></table>`;
+}
+async function saveBus(){
+  const name=document.getElementById('bus-name').value.trim();
+  const driver=document.getElementById('bus-driver').value.trim();
+  if(!name){alert('Bus / Route name is required.');return;}
+  L(true);
+  const{error}=await sb.from('buses').insert({
+    institution_id:prof.institution_id,name,driver_name:driver||null
+  });
+  L(false);if(error){alert('Error: '+error.message);return;}
+  document.getElementById('bus-name').value='';document.getElementById('bus-driver').value='';
+  await loadBuses();alert('Bus created!');
+}
+async function setBusStatus(id,active){
+  L(true);
+  const{error}=await sb.from('buses').update({is_active:active}).eq('id',id);
+  L(false);if(error){alert('Error: '+error.message);return;}
+  await loadBuses();
+}
+function populateBusSelect(){
+  const sel=document.getElementById('bus-select');if(!sel)return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">-- Select Bus --</option>';
+  busList.filter(b=>b.is_active).forEach(b=>{
+    const o=document.createElement('option');o.value=b.id;o.text=b.name+(b.driver_name?' ('+b.driver_name+')':'');sel.appendChild(o);
+  });
+  if(cur)sel.value=cur;
+}
+
 
 // ── SUBJECTS ──────────────────────────────────────────────────
 async function loadSubjectsForClass(classId){
