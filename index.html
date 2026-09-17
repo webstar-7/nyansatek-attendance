@@ -294,10 +294,7 @@ footer strong{color:var(--a);}
               <div class="rc-row"><span>Event</span><span id="rc-event">—</span></div>
               <div class="rc-row"><span>Time</span><span id="rc-time">—</span></div>
               <div class="rc-row" id="rc-fee-row" style="display:none;">
-                <span>Fee Status</span><span id="rc-fee">—</span>
-              </div>
-              <div class="rc-row" id="rc-bal-row" style="display:none;">
-                <span>Outstanding</span><span id="rc-bal" style="color:var(--d);">—</span>
+                <span>Reason</span><span id="rc-fee">—</span>
               </div>
               <div class="rc-row" id="rc-notif-row">
                 <span>Notification</span><span id="rc-notif">—</span>
@@ -378,6 +375,7 @@ footer strong{color:var(--a);}
           <button class="tb" onclick="swTab('at')">&#128197; Acad. Terms</button>
           <button class="tb" onclick="swTab('cl')">&#127979; Classes</button>
           <button class="tb" onclick="swTab('bus')">&#128652; Buses</button>
+          <button class="tb" onclick="swTab('staff')">&#128737; Staff</button>
           <button class="tb" onclick="swTab('grading')">&#9878; Grading Setup</button>
           <button class="tb" onclick="swTab('gb')">&#128221; Gradebook</button>
           <button class="tb" onclick="swTab('rc')">&#128203; Report Cards</button>
@@ -620,7 +618,7 @@ footer strong{color:var(--a);}
           <div class="admin-grid">
             <div>
               <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Bus / Route</h3>
-              <p class="hint">Staff scanning students onto a bus will pick from this list — no student-to-bus assignment yet, any active bus can be used to scan any student.</p>
+              <p class="hint">Staff scanning students onto a bus will pick from this list — no student-to-bus assignment yet, any active bus can be used to scan any student. "Driver Name" is just a label here, not a login — create an actual account for the driver under the Staff tab.</p>
               <div class="fg"><label>Bus / Route Name *</label>
                 <input type="text" id="bus-name" placeholder="e.g. Bus 3 or Spintex Route"></div>
               <div class="fg"><label>Driver Name (optional)</label>
@@ -632,6 +630,30 @@ footer strong{color:var(--a);}
               <div id="buslist"><div class="es">Loading...</div></div>
             </div>
           </div>
+        </div>
+
+        <!-- STAFF -->
+        <div class="tp" id="tp-staff">
+          <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Create New Staff Account</h3>
+          <p class="hint">Staff accounts can use both Gate and Bus scanning — there's no separate role for each, so any staff member can cover for another if someone's absent. Every scan they perform is stamped with their name.</p>
+          <div class="admin-grid">
+            <div>
+              <div class="fg"><label>Full Name *</label><input type="text" id="ns-name" placeholder="e.g. Kwame Owusu"></div>
+              <div class="fg"><label>Email (used to log in) *</label><input type="email" id="ns-email" placeholder="staff@example.com"></div>
+              <div class="fg"><label>Phone</label><input type="tel" id="ns-phone"></div>
+              <button class="btn bf ba" id="ns-submit" onclick="createStaffAccount()">Create Staff Account</button>
+              <p class="hint">A temporary password will be shown once — the staff member must change it on first login.</p>
+            </div>
+            <div>
+              <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">New Login</h3>
+              <div id="ns-result"><div class="es">Fill in the form and click Create Staff Account.</div></div>
+            </div>
+          </div>
+          <hr style="margin:18px 0;border-color:var(--b);">
+          <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Staff Accounts</h3>
+          <p class="hint" style="margin-bottom:8px;">Deactivating blocks their login immediately. It does not delete their record — past scans still show their name.</p>
+          <button class="btn bsm" onclick="loadStaffAccountsList()">Refresh</button>
+          <div id="staff-list" style="margin-top:8px;"><div class="es">Click Refresh to load.</div></div>
         </div>
 
         <!-- GRADING SETUP -->
@@ -1077,7 +1099,7 @@ function getCachedSessionOffline(){
 // slow in practice.
 // ══════════════════════════════════════════════════════════════
 const OFFLINE_DB_NAME='nyansatek_school_offline';
-const OFFLINE_DB_VERSION=2; // v2 adds idMap, for offline-created students (local- IDs resolved once synced)
+const OFFLINE_DB_VERSION=4; // v4 adds pickupsCache, for offline Pickup mode at the Gate
 let offlineDBPromise=null;
 
 function openOfflineDB(){
@@ -1086,11 +1108,11 @@ function openOfflineDB(){
     const req=indexedDB.open(OFFLINE_DB_NAME,OFFLINE_DB_VERSION);
     req.onupgradeneeded=()=>{
       const db=req.result;
-      ['membersCache','feeTermsCache','classesCache','academicTermsCache','subjectsCache','enrollCache','scoresCache']
+      ['membersCache','feeTermsCache','classesCache','academicTermsCache','subjectsCache','enrollCache','scoresCache','pickupsCache']
         .forEach(name=>{if(!db.objectStoreNames.contains(name))db.createObjectStore(name,{keyPath:'id'});});
       // financeQueue: queued Fee Payment / Grade-save / Bulk-SMS / Register
-      // Member writes made offline. Same resumable-step, type-dispatched
-      // pattern used in the POS build.
+      // Member / Gate-or-Bus-scan / Pickup-confirm writes made offline.
+      // Same resumable-step, type-dispatched pattern used in the POS build.
       if(!db.objectStoreNames.contains('financeQueue')){
         const f=db.createObjectStore('financeQueue',{keyPath:'clientRef'});
         f.createIndex('queuedAt','queuedAt');
@@ -1100,6 +1122,13 @@ function openOfflineDB(){
       // creation otherwise stays online-only) -- mirrors the same
       // mechanism POS uses for offline-created products.
       if(!db.objectStoreNames.contains('idMap'))db.createObjectStore('idMap',{keyPath:'localId'});
+      // feeBalanceCache: one row per institution, holding a
+      // {member_id}_{fee_term_id} -> total-paid map, refreshed in bulk by
+      // cacheOfflineEssentials(). Lets checkFeeStatus() compute a real
+      // balance at the Gate or on a Bus with zero connectivity, instead
+      // of only being able to fall back on "no data, so let them
+      // through" -- which would make the fee check meaningless offline.
+      if(!db.objectStoreNames.contains('feeBalanceCache'))db.createObjectStore('feeBalanceCache',{keyPath:'id'});
     };
     req.onsuccess=()=>resolve(req.result);
     req.onerror=()=>reject(req.error);
@@ -1125,6 +1154,36 @@ async function resolveId(id){
       req.onerror=()=>reject(req.error);
     });
   }catch(e){return id;}
+}
+
+// ── FEE BALANCE CACHE (for offline Gate/Bus fee-status checks) ──
+async function cacheFeeBalanceMap(instId,paidMap){
+  try{
+    const db=await openOfflineDB();
+    db.transaction('feeBalanceCache','readwrite').objectStore('feeBalanceCache').put({id:instId,paidMap});
+  }catch(e){console.warn('Could not cache fee balance map:',e);}
+}
+// Returns the total paid for one member+term, from the cached bulk
+// snapshot PLUS any not-yet-synced offline fee_payment still sitting in
+// the queue — so a second offline payment for the same student in the
+// same outage doesn't get double-counted as unpaid.
+async function getCachedFeePaid(memberId,feeTermId){
+  let paid=0;
+  try{
+    const db=await openOfflineDB();
+    const row=await new Promise((resolve,reject)=>{
+      const req=db.transaction('feeBalanceCache','readonly').objectStore('feeBalanceCache').get(prof.institution_id);
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+    paid=(row&&row.paidMap&&row.paidMap[memberId+'_'+feeTermId])||0;
+  }catch(e){/* stays 0 -- cache not populated yet on this device */}
+  try{
+    const queued=await getQueuedFinanceActions();
+    queued.filter(a=>a.type==='fee_payment'&&a.payload&&a.payload.member_id===memberId&&a.payload.fee_term_id===feeTermId)
+      .forEach(a=>{paid+=a.payload.amount_paid||0;});
+  }catch(e){/* ignore */}
+  return paid;
 }
 
 function genClientRef(){
@@ -1181,16 +1240,27 @@ function isLikelyNetworkError(err){
 async function cacheOfflineEssentials(){
   if(!prof?.institution_id)return;
   try{
-    const[{data:enr},{data:subj},{data:sc}]=await Promise.all([
+    const[{data:enr},{data:subj},{data:sc},{data:pays},{data:pickups}]=await Promise.all([
       sb.from('class_enrollments').select('*').eq('institution_id',prof.institution_id),
       sb.from('subjects').select('*').eq('institution_id',prof.institution_id),
-      sb.from('scores').select('*').eq('institution_id',prof.institution_id)
+      sb.from('scores').select('*').eq('institution_id',prof.institution_id),
+      sb.from('fee_payments').select('member_id,fee_term_id,amount_paid').eq('institution_id',prof.institution_id),
+      sb.from('authorized_pickups').select('*').eq('institution_id',prof.institution_id).eq('is_active',true)
     ]);
     if(enr)await cacheRowsOffline('enrollCache',prof.institution_id,enr);
     if(subj)await cacheRowsOffline('subjectsCache',prof.institution_id,subj);
     if(sc)await cacheRowsOffline('scoresCache',prof.institution_id,sc);
+    if(pickups)await cacheRowsOffline('pickupsCache',prof.institution_id,pickups);
+    if(pays){
+      const paidMap={};
+      pays.forEach(p=>{
+        const key=p.member_id+'_'+p.fee_term_id;
+        paidMap[key]=(paidMap[key]||0)+(p.amount_paid||0);
+      });
+      await cacheFeeBalanceMap(prof.institution_id,paidMap);
+    }
   }catch(e){
-    console.warn('Could not refresh offline essentials cache (enrollments/subjects/scores):',e);
+    console.warn('Could not refresh offline essentials cache (enrollments/subjects/scores/fee balances/pickups):',e);
   }
   // members/feeTerms/classes/academicTerms were just loaded live moments
   // ago in initInstitution() — cache those too while we're at it.
@@ -1390,6 +1460,63 @@ async function syncOneQueuedFinanceAction(rec){
       }
       rec.pendingRecipients=rec.pendingRecipients.slice(1);
       await updateQueuedFinanceAction(rec);
+    }
+    await removeQueuedFinanceAction(rec.clientRef);
+    return true;
+  }
+
+  if(rec.type==='gate_scan'){
+    // Gate or Bus attendance scan made offline. Step 1: the attendance
+    // log itself (source-of-truth that the scan happened at all — this
+    // must land even if the deferred SMS below never succeeds). Step 2:
+    // best-effort deferred SMS, same as the online path would have sent
+    // in the moment — a failure here doesn't block removing this from
+    // the queue, since the attendance record is already correct.
+    const p=rec.payload;
+    if(!rec.logId){
+      const{data:log,error}=await sb.from('attendance_logs').insert({
+        institution_id:p.institution_id,member_id:p.member_id,event_type:p.event_type,
+        status:p.status,deny_reason:p.deny_reason,fee_balance:p.fee_balance,
+        guardian_phone:p.guardian_phone,notification_sent:false,
+        source:p.source,bus_id:p.bus_id||null,
+        scanned_by:p.scanned_by||null,scanned_by_name_snapshot:p.scanned_by_name_snapshot||null
+      }).select().single();
+      if(error)throw error;
+      rec.logId=log.id;
+      await updateQueuedFinanceAction(rec);
+    }
+    if(p.notify&&p.guardian_phone&&!rec.notified){
+      const ok=await sendSMS(p.guardian_phone,p.sms_message);
+      if(ok){
+        await sb.from('attendance_logs').update({notification_sent:true}).eq('id',rec.logId);
+        await sb.from('notification_logs').insert({
+          institution_id:p.institution_id,attendance_log_id:rec.logId,
+          recipient_phone:p.guardian_phone,message:p.sms_message
+        });
+      }
+      rec.notified=true;await updateQueuedFinanceAction(rec);
+    }
+    await removeQueuedFinanceAction(rec.clientRef);
+    return true;
+  }
+
+  if(rec.type==='pickup_confirm'){
+    // Two independent steps, each guarded so a retry after a partial
+    // failure never double-inserts the pickup_logs row.
+    const p=rec.payload;
+    if(!rec.logDone){
+      const{error}=await sb.from('pickup_logs').insert({
+        institution_id:p.institution_id,member_id:p.member_id,
+        authorized_pickup_id:p.authorized_pickup_id,released_by:p.released_by
+      });
+      if(error)throw error;
+      rec.logDone=true;await updateQueuedFinanceAction(rec);
+    }
+    if(!rec.notifDone){
+      await sb.from('notification_logs').insert({
+        institution_id:p.institution_id,recipient_phone:'gate',message:p.message
+      });
+      rec.notifDone=true;await updateQueuedFinanceAction(rec);
     }
     await removeQueuedFinanceAction(rec.clientRef);
     return true;
@@ -1685,6 +1812,75 @@ document.getElementById('scan-input').addEventListener('input',e=>{
   },150);
 });
 
+// ══════════════════════════════════════════════════════════════
+// SHARED ATTENDANCE SCAN RECORDING — Gate + Bus
+// ══════════════════════════════════════════════════════════════
+// Tries a live insert + live SMS first. If the device is offline, or
+// the live insert throws a network-shaped error, queues both instead
+// (type 'gate_scan' in financeQueue) for sync once back online. Shared
+// by Gate's processScan() and Bus's processBusScan() so both get
+// identical offline resilience without duplicating this logic twice —
+// the two callers still handle their own mode-specific rules (Gate's
+// Pickup mode, which Bus doesn't have; building the right fee-check
+// display text) before calling this.
+async function recordAttendanceScan({source,busId,mode,member,allowed,reason,feeBalance,feeDisplay}){
+  const shouldNotify=(allowed&&member.notify_entry&&mode==='entry')||
+                     (allowed&&member.notify_exit&&mode==='exit')||
+                     (!allowed);
+  let smsMessage=null;
+  if(shouldNotify&&member.guardian_phone){
+    smsMessage=source==='bus'
+      ?buildBusNotifMsg(member,allowed,feeBalance,busList.find(b=>b.id===busId)?.name||'the school bus')
+      :buildNotifMsg(member,allowed,feeBalance,feeDisplay);
+  }
+
+  // Who actually performed this scan — independent of which bus/Gate
+  // terminal was used, since Staff accounts aren't restricted to one.
+  // Mirrors POS's cashier_id/cashier_name_snapshot pattern.
+  const scannedByName=prof.display_name||prof.full_name||'—';
+
+  const goOffline=async()=>{
+    await queueFinanceAction({
+      type:'gate_scan',
+      payload:{
+        institution_id:prof.institution_id,member_id:member.id,event_type:mode,
+        status:allowed?'allowed':'denied',deny_reason:reason||null,fee_balance:feeBalance,
+        guardian_phone:member.guardian_phone||null,source,bus_id:busId||null,
+        scanned_by:prof.id,scanned_by_name_snapshot:scannedByName,
+        notify:!!(shouldNotify&&member.guardian_phone),sms_message:smsMessage
+      }
+    });
+    updateOfflineUI();
+    return{notified:(shouldNotify&&member.guardian_phone)?'QUEUED':'None'};
+  };
+
+  if(!navigator.onLine)return await goOffline();
+
+  try{
+    const{data:log,error}=await sb.from('attendance_logs').insert({
+      institution_id:prof.institution_id,member_id:member.id,event_type:mode,
+      status:allowed?'allowed':'denied',deny_reason:reason||null,fee_balance:feeBalance,
+      guardian_phone:member.guardian_phone||null,notification_sent:false,
+      source,bus_id:busId||null,scanned_by:prof.id,scanned_by_name_snapshot:scannedByName
+    }).select().single();
+    if(error)throw error;
+    let notified='None';
+    if(shouldNotify&&member.guardian_phone){
+      await sendSMS(member.guardian_phone,smsMessage);
+      if(log)await sb.from('attendance_logs').update({notification_sent:true}).eq('id',log.id);
+      await sb.from('notification_logs').insert({
+        institution_id:prof.institution_id,attendance_log_id:log?.id||null,
+        recipient_phone:member.guardian_phone,message:smsMessage
+      });
+      notified=member.guardian_phone;
+    }
+    return{notified};
+  }catch(err){
+    if(isLikelyNetworkError(err))return await goOffline();
+    throw err;
+  }
+}
+
 async function processScan(code){
   // Find member by member_code
   const member=members.find(m=>m.member_code.toLowerCase()===code.toLowerCase());
@@ -1720,34 +1916,13 @@ async function processScan(code){
     }
   }
 
-  // Log the event
-  const{data:log}=await sb.from('attendance_logs').insert({
-    institution_id:prof.institution_id,
-    member_id:member.id,
-    event_type:scanMode,
-    status:allowed?'allowed':'denied',
-    deny_reason:reason||null,
-    fee_balance:feeBalance,
-    guardian_phone:member.guardian_phone||null,
-    notification_sent:false
-  }).select().single();
-
-  // Send notification
   let notified='None';
-  const shouldNotify=(allowed&&member.notify_entry&&scanMode==='entry')||
-                     (allowed&&member.notify_exit&&scanMode==='exit')||
-                     (!allowed);
-  if(shouldNotify&&member.guardian_phone){
-    const msg=buildNotifMsg(member,allowed,feeBalance,feeDisplay);
-    await sendSMS(member.guardian_phone,msg);
-    if(log)await sb.from('attendance_logs').update({notification_sent:true}).eq('id',log.id);
-    await sb.from('notification_logs').insert({
-      institution_id:prof.institution_id,
-      attendance_log_id:log?.id||null,
-      recipient_phone:member.guardian_phone,
-      message:msg
-    });
-    notified=member.guardian_phone;
+  try{
+    const result=await recordAttendanceScan({source:'gate',busId:null,mode:scanMode,member,allowed,reason,feeBalance,feeDisplay});
+    notified=result.notified;
+  }catch(err){
+    console.error('Could not record attendance scan:',err);
+    alert('Error recording this scan: '+(err.message||'Unknown error'));
   }
 
   showResult({
@@ -1765,18 +1940,36 @@ async function processScan(code){
 
 async function checkFeeStatus(memberId){
   const today=td();
-  const classId=await getMemberClassId(memberId);
-  let q=sb.from('fee_terms').select('*')
-    .eq('institution_id',prof.institution_id).eq('is_active',true)
-    .lte('start_date',today).gte('end_date',today);
-  q=classId?q.or(`class_id.eq.${classId},class_id.is.null`):q.is('class_id',null);
-  const{data:terms}=await q;
+  const classId=await getMemberClassId(memberId); // already has its own offline fallback
+
+  let terms;
+  try{
+    let q=sb.from('fee_terms').select('*')
+      .eq('institution_id',prof.institution_id).eq('is_active',true)
+      .lte('start_date',today).gte('end_date',today);
+    q=classId?q.or(`class_id.eq.${classId},class_id.is.null`):q.is('class_id',null);
+    const{data,error}=await q;
+    if(error)throw error;
+    terms=data;
+  }catch(e){
+    console.warn('Could not check fee terms live, falling back to offline cache:',e);
+    const cached=await getCachedRowsOffline('feeTermsCache',prof.institution_id);
+    terms=cached.filter(t=>t.is_active&&t.start_date<=today&&t.end_date>=today&&(classId?(t.class_id===classId||!t.class_id):!t.class_id));
+  }
   if(!terms||!terms.length)return{status:'no_term',balance:0};
   // Prefer a class-specific fee term over the "All Classes" default rate
   const term=terms.find(t=>t.class_id===classId)||terms.find(t=>!t.class_id)||terms[0];
-  const{data:pays}=await sb.from('fee_payments').select('amount_paid')
-    .eq('member_id',memberId).eq('fee_term_id',term.id);
-  const paid=(pays||[]).reduce((s,p)=>s+p.amount_paid,0);
+
+  let paid;
+  try{
+    const{data:pays,error}=await sb.from('fee_payments').select('amount_paid')
+      .eq('member_id',memberId).eq('fee_term_id',term.id);
+    if(error)throw error;
+    paid=(pays||[]).reduce((s,p)=>s+p.amount_paid,0);
+  }catch(e){
+    console.warn('Could not check fee payments live, falling back to offline cache:',e);
+    paid=await getCachedFeePaid(memberId,term.id);
+  }
   const balance=Math.max(0,term.amount-paid);
 
   if(balance<=0)return{status:'paid',balance:0,term:term.term_name};
@@ -1840,17 +2033,19 @@ function showResult(r){
   document.getElementById('rc-time').innerText=new Date().toLocaleTimeString();
 
   const frow=document.getElementById('rc-fee-row');
-  const brow=document.getElementById('rc-bal-row');
-  if(institution?.type==='school'&&scanMode==='entry'){
+  if(institution?.type==='school'&&scanMode==='entry'&&!r.allowed&&r.reason){
+    // Generic, non-monetary reason only — the actual balance/term status
+    // is never shown to whoever's operating Gate or Bus scanning. It
+    // goes to the guardian's SMS only.
     frow.style.display='flex';
-    document.getElementById('rc-fee').innerText=r.feeDisplay||'—';
-    if(!r.allowed&&r.balance>0){
-      brow.style.display='flex';
-      document.getElementById('rc-bal').innerText=GH(r.balance);
-    }else{brow.style.display='none';}
-  }else{frow.style.display='none';brow.style.display='none';}
+    document.getElementById('rc-fee').innerText='Outstanding balance — parent notified by SMS';
+  }else{
+    frow.style.display='none';
+  }
 
-  document.getElementById('rc-notif').innerText=r.phone&&r.phone!=='None'?'Sent to '+r.phone:'Not sent';
+  document.getElementById('rc-notif').innerText=
+    r.phone==='QUEUED'?'Queued (offline) — will send once back online'
+    :(r.phone&&r.phone!=='None'?'Sent to '+r.phone:'Not sent');
 
   overlay.classList.add('on');
 
@@ -2055,27 +2250,13 @@ async function processBusScan(code){
     }
   }
 
-  const{data:log}=await sb.from('attendance_logs').insert({
-    institution_id:prof.institution_id,member_id:member.id,event_type:busScanMode,
-    status:allowed?'allowed':'denied',deny_reason:reason||null,fee_balance:feeBalance,
-    guardian_phone:member.guardian_phone||null,notification_sent:false,
-    source:'bus',bus_id:selectedBusId
-  }).select().single();
-
   let notified='None';
-  const shouldNotify=(allowed&&member.notify_entry&&busScanMode==='entry')||
-                     (allowed&&member.notify_exit&&busScanMode==='exit')||
-                     (!allowed);
-  if(shouldNotify&&member.guardian_phone){
-    const busName=busList.find(b=>b.id===selectedBusId)?.name||'the school bus';
-    const msg=buildBusNotifMsg(member,allowed,feeBalance,busName);
-    await sendSMS(member.guardian_phone,msg);
-    if(log)await sb.from('attendance_logs').update({notification_sent:true}).eq('id',log.id);
-    await sb.from('notification_logs').insert({
-      institution_id:prof.institution_id,attendance_log_id:log?.id||null,
-      recipient_phone:member.guardian_phone,message:msg
-    });
-    notified=member.guardian_phone;
+  try{
+    const result=await recordAttendanceScan({source:'bus',busId:selectedBusId,mode:busScanMode,member,allowed,reason,feeBalance,feeDisplay});
+    notified=result.notified;
+  }catch(err){
+    console.error('Could not record attendance scan:',err);
+    alert('Error recording this scan: '+(err.message||'Unknown error'));
   }
 
   scanMode=busScanMode; // showResult() reads the shared scanMode for its Entry/Exit label
@@ -2287,9 +2468,18 @@ function filterStudentProfileSearch(val){
 }
 
 async function getMemberClassId(memberId){
-  const{data}=await sb.from('class_enrollments').select('class_id,created_at')
-    .eq('member_id',memberId).order('created_at',{ascending:false}).limit(1);
-  return(data&&data.length)?data[0].class_id:null;
+  try{
+    const{data,error}=await sb.from('class_enrollments').select('class_id,created_at')
+      .eq('member_id',memberId).order('created_at',{ascending:false}).limit(1);
+    if(error)throw error;
+    return(data&&data.length)?data[0].class_id:null;
+  }catch(e){
+    console.warn('Could not resolve class enrollment live, falling back to offline cache:',e);
+    const cached=(await getCachedRowsOffline('enrollCache',prof.institution_id))
+      .filter(r=>r.member_id===memberId)
+      .sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    return cached.length?cached[0].class_id:null;
+  }
 }
 
 async function loadStudentProfile(memberId){
@@ -2736,7 +2926,7 @@ async function loadNotifHistory(){
 
 // ── ADMIN TABS ────────────────────────────────────────────────
 function swTab(tab){
-  const order=['mb','sp','ft','fp','ar','nl','at','cl','bus','grading','gb','rc','rp','bs','pu','ts'];
+  const order=['mb','sp','ft','fp','ar','nl','at','cl','bus','staff','grading','gb','rc','rp','bs','pu','ts'];
   order.forEach(t=>{
     const p=document.getElementById('tp-'+t);if(p)p.classList.toggle('on',t===tab);
   });
@@ -2748,6 +2938,7 @@ function swTab(tab){
   if(tab==='at'){loadAcademicTerms();}
   if(tab==='cl'){loadTeacherList().then(loadClasses);}
   if(tab==='bus'){loadBuses();}
+  if(tab==='staff'){loadStaffAccountsList();}
   if(tab==='grading'){loadGradingSetup();}
   if(tab==='rp'){loadFeeTerms();refreshRenumberCard();}
   if(tab==='pu'){loadTeacherList();}
@@ -4127,8 +4318,17 @@ document.getElementById('pu-photo-file').addEventListener('change',async e=>{
 async function handlePickupMode(member){
   document.getElementById('pu-student-name').innerText=member.full_name+' — '+E(member.class_or_dept||'');
   L(true);
-  const{data:pickups}=await sb.from('authorized_pickups').select('*')
-    .eq('member_id',member.id).eq('is_active',true).order('full_name');
+  let pickups;
+  try{
+    const{data,error}=await sb.from('authorized_pickups').select('*')
+      .eq('member_id',member.id).eq('is_active',true).order('full_name');
+    if(error)throw error;
+    pickups=data;
+  }catch(e){
+    console.warn('Could not load authorized pickups live, falling back to offline cache:',e);
+    const cached=await getCachedRowsOffline('pickupsCache',prof.institution_id);
+    pickups=cached.filter(p=>p.member_id===member.id).sort((a,b)=>a.full_name.localeCompare(b.full_name));
+  }
   L(false);
   const box=document.getElementById('pu-persons');
   if(!pickups||!pickups.length){
@@ -4148,21 +4348,44 @@ async function handlePickupMode(member){
 }
 
 async function confirmPickup(pickupId,memberId,pickupName){
+  const goOffline=async()=>{
+    await queueFinanceAction({
+      type:'pickup_confirm',
+      payload:{institution_id:prof.institution_id,member_id:memberId,
+        authorized_pickup_id:pickupId,released_by:prof.id,
+        message:'Student released to '+pickupName+' at '+new Date().toLocaleTimeString()}
+    });
+    updateOfflineUI();
+    document.getElementById('pickup-overlay').style.display='none';
+    document.getElementById('scan-input').focus();
+    const ls=document.getElementById('last-scan');
+    if(ls)ls.innerText='Pickup confirmed (offline — will sync): released to '+pickupName+' at '+new Date().toLocaleTimeString();
+  };
+
+  if(!navigator.onLine){await goOffline();return;}
+
   L(true);
-  await sb.from('pickup_logs').insert({
-    institution_id:prof.institution_id,member_id:memberId,
-    authorized_pickup_id:pickupId,released_by:prof.id
-  });
-  await sb.from('notification_logs').insert({
-    institution_id:prof.institution_id,
-    recipient_phone:'gate',
-    message:'Student released to '+pickupName+' at '+new Date().toLocaleTimeString()
-  });
-  L(false);
-  document.getElementById('pickup-overlay').style.display='none';
-  document.getElementById('scan-input').focus();
-  const ls=document.getElementById('last-scan');
-  if(ls)ls.innerText='Pickup confirmed: released to '+pickupName+' at '+new Date().toLocaleTimeString();
+  try{
+    const{error:e1}=await sb.from('pickup_logs').insert({
+      institution_id:prof.institution_id,member_id:memberId,
+      authorized_pickup_id:pickupId,released_by:prof.id
+    });
+    if(e1)throw e1;
+    await sb.from('notification_logs').insert({
+      institution_id:prof.institution_id,
+      recipient_phone:'gate',
+      message:'Student released to '+pickupName+' at '+new Date().toLocaleTimeString()
+    });
+    L(false);
+    document.getElementById('pickup-overlay').style.display='none';
+    document.getElementById('scan-input').focus();
+    const ls=document.getElementById('last-scan');
+    if(ls)ls.innerText='Pickup confirmed: released to '+pickupName+' at '+new Date().toLocaleTimeString();
+  }catch(err){
+    L(false);
+    if(isLikelyNetworkError(err)){await goOffline();}
+    else{alert('Error recording pickup: '+(err.message||'Unknown error'));}
+  }
 }
 
 function denyPickup(){
@@ -4411,6 +4634,71 @@ async function createTeacherAccount(){
   }catch(err){
     res.innerHTML=`<div class="es" style="color:var(--r);">${E(err.message)}</div>`;
   }finally{btn.disabled=false;btn.innerText='Create Teacher';}
+}
+
+// ── STAFF (Gate + Bus scanning accounts) ────────────────────────
+// Same pattern as Teacher accounts. Staff aren't restricted to Gate or
+// Bus specifically — every Staff login can use either, so anyone can
+// cover for anyone if someone's absent. Accountability instead comes
+// from stamping every scan with who performed it (recordAttendanceScan).
+async function createStaffAccount(){
+  const name=document.getElementById('ns-name').value.trim();
+  const email=document.getElementById('ns-email').value.trim();
+  const phone=document.getElementById('ns-phone').value.trim();
+  const res=document.getElementById('ns-result');
+  if(!name||!email){res.innerHTML='<div class="es" style="color:var(--d);">Full name and email are required.</div>';return;}
+  const btn=document.getElementById('ns-submit');btn.disabled=true;btn.innerText='Creating...';
+  try{
+    const{data,error}=await sb.functions.invoke('admin-create-account',{body:{
+      role:'staff',full_name:name,email,phone:phone||null
+    }});
+    if(error||data?.error){throw new Error(data?.error||error.message||'Could not create staff account.');}
+    res.innerHTML=`<div style="padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+      <strong>${E(name)}</strong> can log in with:<br>
+      Email: <strong>${E(email)}</strong><br>
+      Temporary password: <strong style="font-size:1.1rem;letter-spacing:1px;">${E(data.temp_password)}</strong><br>
+      <span class="hint">They'll be asked to set a new password on first login. Save/share this now — it won't be shown again.</span>
+    </div>`;
+    document.getElementById('ns-name').value='';document.getElementById('ns-email').value='';document.getElementById('ns-phone').value='';
+    await loadStaffAccountsList();
+  }catch(err){
+    res.innerHTML=`<div class="es" style="color:var(--d);">${E(err.message)}</div>`;
+  }finally{btn.disabled=false;btn.innerText='Create Staff Account';}
+}
+
+async function loadStaffAccountsList(){
+  const c=document.getElementById('staff-list');if(!c)return;
+  if(!prof?.institution_id)return;
+  const{data,error}=await sb.from('inst_profiles').select('*')
+    .eq('institution_id',prof.institution_id).eq('role','staff').order('display_name');
+  if(error){c.innerHTML=`<div class="es" style="color:var(--d);">${E(error.message)}</div>`;return;}
+  if(!data||!data.length){c.innerHTML='<div class="es">No staff accounts yet.</div>';return;}
+  c.innerHTML=`<table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead>
+  <tbody>${data.map(s=>`<tr>
+    <td><strong>${E(s.display_name||s.full_name||'—')}</strong></td>
+    <td>${E(s.login_email||s.email||'—')}</td>
+    <td><span class="badge ${s.is_active?'bg':'br'}">${s.is_active?'Active':'Deactivated'}</span></td>
+    <td>${s.is_active
+      ?`<button class="btn bsm" style="color:var(--d);border-color:var(--d);" onclick="setStaffStatus('${s.id}','deactivate','${E(s.display_name||s.full_name||'this staff member')}')">Deactivate</button>`
+      :`<button class="btn bsm" style="color:var(--s);border-color:var(--s);" onclick="setStaffStatus('${s.id}','reactivate','${E(s.display_name||s.full_name||'this staff member')}')">Reactivate</button>`}
+    </td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function setStaffStatus(id,action,name){
+  const verb=action==='deactivate'?'Deactivate':'Reactivate';
+  const warn=action==='deactivate'
+    ?` They will be logged out immediately and won't be able to sign in.`
+    :` They will be able to sign in again.`;
+  if(!confirm(`${verb} ${name}?${warn}`))return;
+  L(true);
+  try{
+    const{data,error}=await sb.functions.invoke('admin-set-account-status',{body:{target_id:id,action}});
+    if(error||data?.error)throw new Error(data?.error||error.message||`Could not ${action} account.`);
+    await loadStaffAccountsList();
+  }catch(err){
+    alert('Error: '+err.message);
+  }finally{L(false);}
 }
 
 // ── BILLING (admin) ──────────────────────────────────────────────
