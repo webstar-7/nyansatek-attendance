@@ -19,7 +19,7 @@ const PAYSTACK_PUBLIC_KEY = "pk_live_f06348c9521967084c78419c709c740c7d3b51d2"; 
 const BILLING_API_BASE = "https://nyansatek.systems/.netlify/functions"; // renew/upgrade endpoints are centralized on the storefront -- see their _lib/cors.js for why this cross-origin call is allowed
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
@@ -269,6 +269,11 @@ footer strong{color:var(--a);}
         <div class="scan-box">
           <div class="scan-icon">&#128247;</div>
           <div class="scan-label">Scan ID card or QR code</div>
+          <button type="button" class="btn bsm" style="margin-bottom:8px;" id="gate-camera-toggle" onclick="toggleGateCamera()">&#128247; Use Camera Instead</button>
+          <div id="gate-camera-wrap" style="display:none;margin-bottom:8px;">
+            <video id="gate-video" autoplay playsinline muted style="width:100%;max-width:360px;border-radius:10px;background:#000;display:block;margin:0 auto;"></video>
+            <canvas id="gate-canvas" style="display:none;"></canvas>
+          </div>
           <input type="text" id="scan-input" placeholder="Waiting for scan..." autocomplete="off" autocorrect="off">
         </div>
         <div class="last-scan" id="last-scan">No scans yet today.</div>
@@ -1447,6 +1452,7 @@ async function handleLogout(){
   }
   await sb.auth.signOut();sess=null;prof=null;institution=null;
   try{localStorage.removeItem(OFFLINE_SESSION_KEY);}catch(e){/* non-fatal */}
+  stopGateCamera();stopBusCamera();
   scr('l');
 }
 
@@ -1579,6 +1585,7 @@ function swV(v){
   if(v==='gv')setTimeout(()=>document.getElementById('scan-input')?.focus(),100);
   if(v==='bv')loadBillingInfo();
   if(v==='busv')initBusView();else stopBusCamera();
+  if(v!=='gv')stopGateCamera();
 }
 
 function buildNav(role){
@@ -1911,6 +1918,82 @@ document.getElementById('bus-scan-input').addEventListener('keypress',e=>{
     if(code){e.target.value='';processBusScan(code);}
   }
 });
+
+// ══════════════════════════════════════════════════════════════
+// GATE CAMERA — optional, off by default. The keyboard-wedge scanner
+// input stays exactly as it was; this just adds a toggle for schools
+// that don't have a physical scanner device, using the same camera +
+// jsQR pattern Bus mode already uses. Calls the existing processScan()
+// directly, so fee-status checks, SMS, and the result overlay all
+// behave identically to a keyboard-scanned entry.
+// ══════════════════════════════════════════════════════════════
+let gateCameraOn=false,gateCameraStream=null,gateScanLoopActive=false;
+let gateLastCode=null,gateLastScanTime=0;
+
+function toggleGateCamera(){
+  gateCameraOn=!gateCameraOn;
+  const wrap=document.getElementById('gate-camera-wrap');
+  const btn=document.getElementById('gate-camera-toggle');
+  if(gateCameraOn){
+    wrap.style.display='block';
+    btn.innerHTML='&#8963; Use Keyboard Scanner Instead';
+    startGateCamera();
+  }else{
+    turnOffGateCameraUI();
+    stopGateCamera();
+    document.getElementById('scan-input').focus();
+  }
+}
+function turnOffGateCameraUI(){
+  gateCameraOn=false;
+  document.getElementById('gate-camera-wrap').style.display='none';
+  document.getElementById('gate-camera-toggle').innerHTML='&#128247; Use Camera Instead';
+}
+async function startGateCamera(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    alert('Camera access is not supported in this browser. Please use the keyboard scanner input instead.');
+    turnOffGateCameraUI();
+    return;
+  }
+  try{
+    gateCameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video=document.getElementById('gate-video');
+    video.srcObject=gateCameraStream;
+    await video.play();
+    gateScanLoopActive=true;
+    requestAnimationFrame(gateScanTick);
+  }catch(e){
+    console.warn('Gate camera error:',e);
+    alert('Could not access the camera: '+e.message+'. You can still use the keyboard scanner input.');
+    turnOffGateCameraUI();
+  }
+}
+function stopGateCamera(){
+  gateScanLoopActive=false;
+  if(gateCameraStream){gateCameraStream.getTracks().forEach(t=>t.stop());gateCameraStream=null;}
+}
+function gateScanTick(){
+  if(!gateScanLoopActive)return;
+  const video=document.getElementById('gate-video');
+  const canvas=document.getElementById('gate-canvas');
+  if(video&&video.readyState===video.HAVE_ENOUGH_DATA&&typeof jsQR!=='undefined'){
+    canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const code=jsQR(imageData.data,imageData.width,imageData.height);
+    if(code&&code.data)handleGateQRDetected(code.data.trim());
+  }
+  requestAnimationFrame(gateScanTick);
+}
+function handleGateQRDetected(text){
+  // Shorter debounce than Bus (5s vs 8s) since the result overlay here
+  // already auto-closes after 5s on its own countdown.
+  const now=Date.now();
+  if(text===gateLastCode&&(now-gateLastScanTime)<5000)return;
+  gateLastCode=text;gateLastScanTime=now;
+  processScan(text);
+}
 
 async function processBusScan(code){
   if(!selectedBusId){alert('Select a bus/route above before scanning.');return;}
