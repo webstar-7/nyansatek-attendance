@@ -448,6 +448,19 @@ footer strong{color:var(--a);}
 
         <!-- FEE TERMS -->
         <div class="tp" id="tp-ft">
+          <div class="card" style="margin-bottom:16px;max-width:640px;">
+            <h2 style="font-size:.92rem;">Gate Fee Policy</h2>
+            <p class="hint">Controls whether an outstanding balance actually blocks entry at the Gate or on a Bus scan. Both default to 0 — deny on any balance, from day one of the term — until set otherwise.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="fg"><label>Denial Threshold (GH&#8373;)</label>
+                <input type="number" step="0.01" min="0" id="fp-denial-threshold" placeholder="0">
+                <p class="hint" style="margin-top:2px;margin-bottom:0;">Balance must exceed this to be denied — e.g. set to 20 to ignore small stray balances.</p></div>
+              <div class="fg"><label>Grace Period (days)</label>
+                <input type="number" min="0" id="fp-grace-days" placeholder="0">
+                <p class="hint" style="margin-top:2px;margin-bottom:0;">No one is denied for unpaid fees until this many days after the fee term's start date.</p></div>
+            </div>
+            <button class="btn bf ba" style="max-width:240px;" onclick="saveFeePolicy()">Save Gate Fee Policy</button>
+          </div>
           <div class="admin-grid">
             <div>
               <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Add Fee Term</h3>
@@ -1628,7 +1641,7 @@ async function initInstitution(){
   // dedicated gate-keeper role (no elevated role) -> the Gate itself.
   const landingView=prof.role==='admin'?'av':prof.role==='teacher'?'sv':'gv';
   swV(landingView);startClock();
-  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();
+  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();
   await cacheOfflineEssentials();
   setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
   document.getElementById('scan-input').focus();
@@ -1699,6 +1712,9 @@ async function processScan(code){
     }else if(feeCheck.status==='no_term'){
       allowed=true;
       feeDisplay='No active term';
+    }else if(feeCheck.status==='grace'){
+      allowed=true;
+      feeDisplay='Grace period — Bal: '+GH(feeBalance);
     }else{
       feeDisplay='Fully Paid';
     }
@@ -1761,8 +1777,27 @@ async function checkFeeStatus(memberId){
   const{data:pays}=await sb.from('fee_payments').select('amount_paid')
     .eq('member_id',memberId).eq('fee_term_id',term.id);
   const paid=(pays||[]).reduce((s,p)=>s+p.amount_paid,0);
-  const balance=term.amount-paid;
-  return{status:balance<=0?'paid':'outstanding',balance:Math.max(0,balance),term:term.term_name};
+  const balance=Math.max(0,term.amount-paid);
+
+  if(balance<=0)return{status:'paid',balance:0,term:term.term_name};
+
+  // Grace period: for the configured number of days after this term
+  // starts, nobody is denied for an unpaid balance yet — gives parents
+  // time to pay before enforcement kicks in. Off (0 days) by default,
+  // matching the original always-enforce behavior.
+  const graceDays=feePolicy?.grace_period_days||0;
+  if(graceDays>0&&term.start_date){
+    const graceEnd=new Date(term.start_date);
+    graceEnd.setDate(graceEnd.getDate()+graceDays);
+    if(new Date(today)<=graceEnd)return{status:'grace',balance,term:term.term_name};
+  }
+
+  // Denial threshold: only actually deny once the balance exceeds this
+  // configured tolerance, so a small stray balance (a few cedis of
+  // rounding, say) doesn't turn a student away. Default 0 — deny on
+  // any balance — matches the original behavior.
+  const threshold=feePolicy?.denial_threshold||0;
+  return{status:balance>threshold?'outstanding':'paid',balance,term:term.term_name};
 }
 
 function buildNotifMsg(member,allowed,balance,feeDisplay){
@@ -2013,6 +2048,8 @@ async function processBusScan(code){
       allowed=false;reason='Outstanding fees: '+GH(feeBalance);feeDisplay=feeCheck.status;
     }else if(feeCheck.status==='no_term'){
       allowed=true;feeDisplay='No active term';
+    }else if(feeCheck.status==='grace'){
+      allowed=true;feeDisplay='Grace period — Bal: '+GH(feeBalance);
     }else{
       feeDisplay='Fully Paid';
     }
@@ -2284,6 +2321,7 @@ async function loadStudentProfile(memberId){
             <tr><td style="padding:3px 0;color:var(--g);">Fees Balance</td><td>
               ${fee.status==='no_term'?'<span class="badge by">No active fee term</span>'
                 :fee.status==='paid'?'<span class="badge bg">Paid up ('+E(fee.term)+')</span>'
+                :fee.status==='grace'?'<span class="badge by">'+GH(fee.balance)+' owed — in grace period ('+E(fee.term)+')</span>'
                 :'<span class="badge br">'+GH(fee.balance)+' outstanding ('+E(fee.term)+')</span>'}
             </td></tr>
             <tr><td style="padding:3px 0;color:var(--g);">Attendance</td><td>${presentCount||0} entries allowed, ${deniedCount||0} denied</td></tr>
@@ -2704,7 +2742,7 @@ function swTab(tab){
   });
   document.getElementById('atbar').querySelectorAll('.tb')
     .forEach((b,i)=>b.classList.toggle('on',order[i]===tab));
-  if(tab==='ft')loadFeeTerms();
+  if(tab==='ft'){loadFeeTerms();loadFeePolicySetup();}
   if(tab==='fp')loadPaymentHistory();
   if(tab==='nl')loadNotifHistory();
   if(tab==='at'){loadAcademicTerms();}
@@ -2919,6 +2957,46 @@ async function masterReport(){
 
 
 // ── SCHOOL MANAGEMENT ─────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// FEE GATE POLICY — per-institution denial threshold + grace period
+// ══════════════════════════════════════════════════════════════
+// Controls how checkFeeStatus() (used by both Gate and Bus scanning)
+// decides whether an outstanding balance actually blocks entry.
+// Defaults (0/0) exactly match the original always-enforce behavior,
+// so an institution that never visits this settings screen sees no
+// change at all.
+const DEFAULT_FEE_POLICY={denial_threshold:0,grace_period_days:0};
+let feePolicy=null;
+async function loadFeePolicy(){
+  if(!prof?.institution_id)return;
+  try{
+    const{data,error}=await sb.from('fee_gate_policy').select('*').eq('institution_id',prof.institution_id).maybeSingle();
+    if(error)throw error;
+    feePolicy=data?{denial_threshold:data.denial_threshold,grace_period_days:data.grace_period_days}:{...DEFAULT_FEE_POLICY};
+  }catch(e){
+    console.warn('Could not load fee gate policy, using defaults:',e);
+    feePolicy={...DEFAULT_FEE_POLICY};
+  }
+}
+async function loadFeePolicySetup(){
+  await loadFeePolicy();
+  document.getElementById('fp-denial-threshold').value=feePolicy.denial_threshold;
+  document.getElementById('fp-grace-days').value=feePolicy.grace_period_days;
+}
+async function saveFeePolicy(){
+  const threshold=parseFloat(document.getElementById('fp-denial-threshold').value)||0;
+  const graceDays=parseInt(document.getElementById('fp-grace-days').value)||0;
+  if(threshold<0||graceDays<0){alert('Values cannot be negative.');return;}
+  L(true);
+  const{error}=await sb.from('fee_gate_policy').upsert({
+    institution_id:prof.institution_id,denial_threshold:threshold,grace_period_days:graceDays
+  },{onConflict:'institution_id'});
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  await loadFeePolicy();
+  alert('Gate fee policy saved!');
+}
 
 // ══════════════════════════════════════════════════════════════
 // GRADING CONFIG — per-institution CA/Exam weights, grading scale,
