@@ -1106,6 +1106,22 @@ function openOfflineDB(){
   if(offlineDBPromise)return offlineDBPromise;
   offlineDBPromise=new Promise((resolve,reject)=>{
     const req=indexedDB.open(OFFLINE_DB_NAME,OFFLINE_DB_VERSION);
+    let settled=false;
+    // Safety net: if this request gets blocked (most commonly by
+    // another tab/window of this same site still holding a connection
+    // open on an older DB version -- easy to hit after several version
+    // bumps in one testing session) the browser fires onblocked and
+    // then just waits, with NO timeout and no error, until that other
+    // connection closes. Without this timeout, that hangs every awaited
+    // caller up the chain (cacheOfflineEssentials -> initInstitution ->
+    // boot2) forever, with zero console output -- exactly the silent
+    // freeze this was built to prevent.
+    const timeout=setTimeout(()=>{
+      if(settled)return;
+      settled=true;
+      offlineDBPromise=null; // let a later call retry with a fresh request instead of staying stuck on this one
+      reject(new Error('Timed out opening the offline database — it may be blocked by another open tab of this app. Try closing other tabs/windows of this site.'));
+    },5000);
     req.onupgradeneeded=()=>{
       const db=req.result;
       ['membersCache','feeTermsCache','classesCache','academicTermsCache','subjectsCache','enrollCache','scoresCache','pickupsCache']
@@ -1130,8 +1146,21 @@ function openOfflineDB(){
       // through" -- which would make the fee check meaningless offline.
       if(!db.objectStoreNames.contains('feeBalanceCache'))db.createObjectStore('feeBalanceCache',{keyPath:'id'});
     };
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error);
+    req.onblocked=()=>{
+      console.warn('IndexedDB upgrade blocked — another tab/window of this app is still open on an older version. Close other tabs of this site to unblock immediately (otherwise this resolves via timeout in a few seconds).');
+      // Don't settle here -- the browser may still unblock on its own if
+      // that other tab closes before the timeout above fires.
+    };
+    req.onsuccess=()=>{
+      if(settled)return;
+      settled=true;clearTimeout(timeout);
+      resolve(req.result);
+    };
+    req.onerror=()=>{
+      if(settled)return;
+      settled=true;clearTimeout(timeout);
+      reject(req.error);
+    };
   });
   return offlineDBPromise;
 }
