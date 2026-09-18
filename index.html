@@ -4785,7 +4785,7 @@ async function createStaffAccount(){
   const btn=document.getElementById('ns-submit');btn.disabled=true;btn.innerText='Creating...';
   try{
     const{data,error}=await sb.functions.invoke('admin-create-account',{body:{
-      role:'staff',full_name:name,email,phone:phone||null
+      role:'gate',full_name:name,email,phone:phone||null // 'gate' is the actual DB-permitted role value (see inst_profiles_role_check) — UI still calls this "Staff" throughout, the two names just don't match
     }});
     if(error||data?.error){throw new Error(data?.error||error.message||'Could not create staff account.');}
     res.innerHTML=`<div style="padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
@@ -4805,7 +4805,7 @@ async function loadStaffAccountsList(){
   const c=document.getElementById('staff-list');if(!c)return;
   if(!prof?.institution_id)return;
   const{data,error}=await sb.from('inst_profiles').select('*')
-    .eq('institution_id',prof.institution_id).eq('role','staff').order('display_name');
+    .eq('institution_id',prof.institution_id).eq('role','gate').order('display_name');
   if(error){c.innerHTML=`<div class="es" style="color:var(--d);">${E(error.message)}</div>`;return;}
   if(!data||!data.length){c.innerHTML='<div class="es">No staff accounts yet.</div>';return;}
   c.innerHTML=`<table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead>
