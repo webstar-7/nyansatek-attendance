@@ -1482,7 +1482,7 @@ async function syncOneQueuedFinanceAction(rec){
       const r=rec.pendingRecipients[0];
       const ok=await sendSMS(r.phone,p.message);
       if(ok){
-        await sb.from('notification_logs').insert({institution_id:p.institution_id,recipient_phone:r.phone,message:p.message});
+        await sb.from('notification_logs').insert({institution_id:p.institution_id,recipient_phone:r.phone,message:p.message,type:'bulk_sms'});
       }else{
         console.warn('Offline bulk SMS: send failed for',r.phone,'— will retry next sync pass.');
         return false; // leave this (and remaining) recipients queued rather than silently dropping them
@@ -1520,7 +1520,7 @@ async function syncOneQueuedFinanceAction(rec){
         await sb.from('attendance_logs').update({notification_sent:true}).eq('id',rec.logId);
         await sb.from('notification_logs').insert({
           institution_id:p.institution_id,attendance_log_id:rec.logId,
-          recipient_phone:p.guardian_phone,message:p.sms_message
+          recipient_phone:p.guardian_phone,message:p.sms_message,type:'gate_or_bus'
         });
       }
       rec.notified=true;await updateQueuedFinanceAction(rec);
@@ -1543,7 +1543,7 @@ async function syncOneQueuedFinanceAction(rec){
     }
     if(!rec.notifDone){
       await sb.from('notification_logs').insert({
-        institution_id:p.institution_id,recipient_phone:'gate',message:p.message
+        institution_id:p.institution_id,recipient_phone:'gate',message:p.message,type:'pickup_note'
       });
       rec.notifDone=true;await updateQueuedFinanceAction(rec);
     }
@@ -1722,8 +1722,9 @@ async function boot2(){
 async function susRenew(){
   const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
   if(!inst)return;
-  const amountPesewas=inst.plan_key==='yearly'?150000:15000; // keep in sync with _catalog.js
-  payWithPaystack({amountPesewas,email:inst.contact_email,onSuccess: async (reference)=>{
+  const plan=SCHOOL_CATALOG[inst.plan_key];
+  if(!plan){alert('Your current plan ("'+inst.plan_key+'") isn\'t recognized — contact NYANSATEK support before renewing.');return;}
+  payWithPaystack({amountPesewas:plan.price,email:inst.contact_email,onSuccess: async (reference)=>{
     const msg=document.getElementById('sus-msg');
     msg.innerHTML='<div class="es">Confirming payment...</div>';
     try{
@@ -1797,7 +1798,7 @@ async function initInstitution(){
   // dedicated gate-keeper role (no elevated role) -> the Gate itself.
   const landingView=prof.role==='admin'?'av':prof.role==='teacher'?'sv':'gv';
   swV(landingView);startClock();
-  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();
+  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();await loadSmsBilling();
   await cacheOfflineEssentials();
   setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
   document.getElementById('scan-input').focus();
@@ -1899,7 +1900,7 @@ async function recordAttendanceScan({source,busId,mode,member,allowed,reason,fee
       if(log)await sb.from('attendance_logs').update({notification_sent:true}).eq('id',log.id);
       await sb.from('notification_logs').insert({
         institution_id:prof.institution_id,attendance_log_id:log?.id||null,
-        recipient_phone:member.guardian_phone,message:smsMessage
+        recipient_phone:member.guardian_phone,message:smsMessage,type:'gate_or_bus'
       });
       notified=member.guardian_phone;
     }
@@ -3125,9 +3126,14 @@ async function initMaster(){
   document.getElementById('fbiz').innerText='NYANSATEK';
   swV('mv');
   L(true);
-  const{data}=await sb.from('institutions').select('*').order('name');
+  const[{data},{data:billing}]=await Promise.all([
+    sb.from('institutions').select('*').order('name'),
+    sb.from('sms_billing').select('*')
+  ]);
   L(false);
   instList=data||[];
+  masterSmsBillingMap={};
+  (billing||[]).forEach(b=>{masterSmsBillingMap[b.institution_id]=b;});
   renderInstList();
   const sel=document.getElementById('mo-inst');
   sel.innerHTML='<option value="">-- Select --</option>';
@@ -3135,17 +3141,38 @@ async function initMaster(){
   setDef('mo-s','mo-e');
 }
 
+let masterSmsBillingMap={};
 function renderInstList(){
   const c=document.getElementById('instlist');
   if(!instList.length){c.innerHTML='<div class="es">No institutions registered yet.</div>';return;}
-  c.innerHTML=`<table><thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Status</th><th>Since</th></tr></thead>
-  <tbody>${instList.map(i=>`<tr>
+  c.innerHTML=`<table><thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Status</th><th>Since</th>
+    <th>SMS Allowance / mo</th><th>Overage Rate (GH&#8373;)</th><th></th></tr></thead>
+  <tbody>${instList.map(i=>{
+    const b=masterSmsBillingMap[i.id]||DEFAULT_SMS_BILLING;
+    return `<tr>
     <td><strong>${E(i.name)}</strong></td>
     <td><span class="badge" style="background:#ede9fe;color:#5b21b6;">${E(i.type)}</span></td>
     <td>${E(i.contact_phone||'—')}</td>
     <td><span class="badge ${i.is_active?'bg':'br'}">${i.is_active?'Active':'Inactive'}</span></td>
     <td>${new Date(i.created_at).toLocaleDateString()}</td>
-  </tr>`).join('')}</tbody></table>`;
+    <td><input type="number" min="0" id="msb-allow-${i.id}" value="${b.monthly_allowance}" style="width:90px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;font-size:.78rem;"></td>
+    <td><input type="number" min="0" step="0.01" id="msb-rate-${i.id}" value="${b.overage_rate}" style="width:70px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;font-size:.78rem;"></td>
+    <td><button class="btn bsm" onclick="saveMasterSmsBilling('${i.id}')">Save</button></td>
+  </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+async function saveMasterSmsBilling(institutionId){
+  const allowance=parseInt(document.getElementById('msb-allow-'+institutionId).value)||0;
+  const rate=parseFloat(document.getElementById('msb-rate-'+institutionId).value)||0;
+  L(true);
+  const{error}=await sb.from('sms_billing').upsert({
+    institution_id:institutionId,monthly_allowance:allowance,overage_rate:rate
+  },{onConflict:'institution_id'});
+  L(false);
+  if(error){alert('Error: '+error.message);return;}
+  masterSmsBillingMap[institutionId]={institution_id:institutionId,monthly_allowance:allowance,overage_rate:rate};
+  alert('SMS billing updated for this institution.');
 }
 
 async function masterReport(){
@@ -3216,6 +3243,70 @@ async function saveFeePolicy(){
   if(error){alert('Error: '+error.message);return;}
   await loadFeePolicy();
   alert('Gate fee policy saved!');
+}
+
+// ══════════════════════════════════════════════════════════════
+// SMS METERING — postpaid allowance, safety-critical always flows
+// ══════════════════════════════════════════════════════════════
+// Gate/Bus attendance notifications are never blocked here (a parent
+// needs to know their child wasn't let in, full stop) but DO count
+// toward the monthly allowance, since they're the dominant real cost
+// driving this whole feature. Only discretionary sends (Bulk SMS, Fee
+// Defaulter reminders) are actually gated once the current calendar
+// month's allowance is used up.
+//
+// Usage is computed LIVE from notification_logs.created_at, never
+// stored or manually reset — a new month just starts counting from
+// zero automatically, so there's nothing that can drift out of sync.
+//
+// allowance/overage_rate are intentionally NOT editable from the
+// school Admin side — only Nyansatek master can set them, via Master >
+// Businesses. A school raising its own allowance would defeat the point.
+const DEFAULT_SMS_BILLING={monthly_allowance:1000,overage_rate:0.05};
+let smsBilling=null;
+async function loadSmsBilling(){
+  if(!prof?.institution_id)return;
+  try{
+    const{data,error}=await sb.from('sms_billing').select('*').eq('institution_id',prof.institution_id).maybeSingle();
+    if(error)throw error;
+    smsBilling=data?{monthly_allowance:data.monthly_allowance,overage_rate:data.overage_rate}:{...DEFAULT_SMS_BILLING};
+  }catch(e){
+    console.warn('Could not load SMS billing config, using defaults:',e);
+    smsBilling={...DEFAULT_SMS_BILLING};
+  }
+}
+async function getMonthlySmsUsage(){
+  if(!prof?.institution_id)return 0;
+  const monthStart=new Date();monthStart.setDate(1);monthStart.setHours(0,0,0,0);
+  const{count,error}=await sb.from('notification_logs').select('id',{count:'exact',head:true})
+    .eq('institution_id',prof.institution_id).gte('created_at',monthStart.toISOString())
+    .in('type',['gate_or_bus','bulk_sms','fee_reminder']); // excludes Pickup's internal note — no real SMS is ever sent for that
+  if(error)throw error;
+  return count||0;
+}
+// Checks whether `count` more DISCRETIONARY SMS can be sent right now.
+// Fails CLOSED (blocks) on any error, unlike a plain usage display —
+// this guards actual spend, so it's safer to block a send and let the
+// admin retry than to silently blow past the allowance because a
+// network hiccup made the usage query fail.
+async function checkSmsAllowance(count){
+  if(!smsBilling)await loadSmsBilling();
+  const allowance=smsBilling?.monthly_allowance??DEFAULT_SMS_BILLING.monthly_allowance;
+  try{
+    const used=await getMonthlySmsUsage();
+    const remaining=allowance-used;
+    return{allowed:remaining>=count,used,allowance,remaining:Math.max(0,remaining)};
+  }catch(e){
+    console.warn('Could not check SMS allowance, blocking discretionary send to be safe:',e);
+    return{allowed:false,used:0,allowance,remaining:0,checkFailed:true};
+  }
+}
+function smsAllowanceBlockMessage(check,requested){
+  if(check.checkFailed){
+    return "Couldn't verify your SMS allowance right now (connection issue) — try again in a moment. Gate and Bus notifications are unaffected either way.";
+  }
+  return `This would send ${requested} SMS, but only ${check.remaining} remain in this month's allowance (${check.used}/${check.allowance} used). `
+    +`Trim your recipient list, or contact NYANSATEK to increase your monthly allowance. Gate and Bus notifications are never affected by this limit.`;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -4081,6 +4172,10 @@ async function sendFeeReminderSMS(){
   const sel=getSelectedDefaulters().filter(m=>m.guardian_phone);
   if(!sel.length){alert('No selected students have a guardian phone number on file.');return;}
   const inst=institution?.name||'the school';
+
+  const check=await checkSmsAllowance(sel.length);
+  if(!check.allowed){alert(smsAllowanceBlockMessage(check,sel.length));return;}
+
   if(!confirm('Send a gentle fee reminder SMS to '+sel.length+' guardian(s)?'))return;
   L(true);
   let sent=0,failed=0;
@@ -4088,7 +4183,7 @@ async function sendFeeReminderSMS(){
     const msg=`Dear Parent, this is a gentle reminder from ${inst} that ${m.full_name} has an outstanding fee balance of ${GHP(m.balance)} for ${rpFeeTerm.term_name}. Kindly settle at your earliest convenience. Thank you.`;
     const ok=await sendSMS(m.guardian_phone,msg);
     if(ok){
-      await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg});
+      await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg,type:'fee_reminder'});
       sent++;
     }else{
       failed++;
@@ -4219,6 +4314,16 @@ async function sendBulkSMS2(){
 
   const recipients=await buildRecipients();
   if(!recipients.length){alert('No members with guardian phone numbers found.');return;}
+
+  // Allowance check only applies to the online send path below — an
+  // offline-queued batch gets sent as soon as this device reconnects,
+  // without re-checking the allowance at that later sync moment. Known,
+  // deliberate scope limit for this pass rather than an oversight.
+  if(navigator.onLine){
+    const check=await checkSmsAllowance(recipients.length);
+    if(!check.allowed){alert(smsAllowanceBlockMessage(check,recipients.length));return;}
+  }
+
   if(!confirm('Send SMS to '+recipients.length+' guardian(s)?'))return;
 
   if(!navigator.onLine){
@@ -4239,7 +4344,7 @@ async function sendBulkSMS2(){
   for(const m of recipients){
     const ok=await sendSMS(m.guardian_phone,msg);
     if(ok){
-      await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg});
+      await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:m.guardian_phone,message:msg,type:'bulk_sms'});
       sent++;
     }else{
       failed++;
@@ -4403,7 +4508,8 @@ async function confirmPickup(pickupId,memberId,pickupName){
     await sb.from('notification_logs').insert({
       institution_id:prof.institution_id,
       recipient_phone:'gate',
-      message:'Student released to '+pickupName+' at '+new Date().toLocaleTimeString()
+      message:'Student released to '+pickupName+' at '+new Date().toLocaleTimeString(),
+      type:'pickup_note'
     });
     L(false);
     document.getElementById('pickup-overlay').style.display='none';
@@ -4731,17 +4837,44 @@ async function setStaffStatus(id,action,name){
 }
 
 // ── BILLING (admin) ──────────────────────────────────────────────
+// Client-side mirror of netlify/functions/_catalog.js's school plans —
+// needed here so the Billing tab can compute the correct renewal
+// amount for whichever plan this school is actually on, and offer a
+// picker for switching plans. Keep these numbers in sync BY HAND with
+// the real _catalog.js; there's no way for this app to import from
+// that repo directly. Prices in pesewas (GHS * 100).
+const SCHOOL_CATALOG = {
+  monthly:     { label:'Monthly — up to 300 students',   price:50000,   cycle:'monthly', includesSms:7500 },
+  yearly_300:  { label:'Yearly — up to 300 students',    price:500000,  cycle:'yearly',  includesSms:7500 },
+  yearly_500:  { label:'Yearly — up to 500 students',    price:800000,  cycle:'yearly',  includesSms:12500 },
+  yearly_800:  { label:'Yearly — up to 800 students',    price:1200000, cycle:'yearly',  includesSms:20000 },
+  yearly_1000: { label:'Yearly — up to 1,000 students',  price:1500000, cycle:'yearly',  includesSms:25000 },
+  yearly_1500: { label:'Yearly — up to 1,500 students',  price:2000000, cycle:'yearly',  includesSms:37500 },
+  yearly_2000: { label:'Yearly — up to 2,000 students',  price:2500000, cycle:'yearly',  includesSms:50000 },
+  yearly_2500: { label:'Yearly — up to 2,500 students',  price:3000000, cycle:'yearly',  includesSms:62500 },
+  yearly_3000: { label:'Yearly — up to 3,000 students',  price:3500000, cycle:'yearly',  includesSms:75000 },
+  yearly_3500: { label:'Yearly — up to 3,500 students',  price:4000000, cycle:'yearly',  includesSms:87500 },
+  yearly_4000: { label:'Yearly — up to 4,000 students',  price:4500000, cycle:'yearly',  includesSms:100000 },
+  yearly_4500: { label:'Yearly — up to 4,500 students',  price:5000000, cycle:'yearly',  includesSms:112500 },
+};
+
 async function loadBillingInfo(){
   const c=document.getElementById('bv-content');
   c.innerHTML='<div class="es">Loading...</div>';
   const{data:inst,error}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
   if(error||!inst){c.innerHTML='<div class="es" style="color:var(--d);">Could not load billing info.</div>';return;}
 
-  const planLabel=inst.plan_key==='yearly'?'Yearly':'Monthly';
+  const currentPlan=SCHOOL_CATALOG[inst.plan_key];
+  const planLabel=currentPlan?currentPlan.label:(inst.plan_key||'Unknown plan');
   const statusBadge=inst.subscription_status==='active'
     ?'<span class="badge bg">Active</span>'
     :'<span class="badge br">Suspended \u2014 payment needed</span>';
   const dueDate=inst.paid_through_date?new Date(inst.paid_through_date).toLocaleDateString():'\u2014';
+
+  const otherPlans=Object.entries(SCHOOL_CATALOG).filter(([key])=>key!==inst.plan_key);
+  const planOptions=otherPlans.map(([key,p])=>
+    `<option value="${key}">${E(p.label)} — GH₵${(p.price/100).toLocaleString()}/${p.cycle==='yearly'?'yr':'mo'}</option>`
+  ).join('');
 
   c.innerHTML=`
     <table style="margin-bottom:16px;">
@@ -4750,15 +4883,84 @@ async function loadBillingInfo(){
         <tr><td style="color:var(--g);">Status</td><td>${statusBadge}</td></tr>
         <tr><td style="color:var(--g);">Renews on</td><td>${E(dueDate)}</td></tr>
         <tr><td style="color:var(--g);">Payment method</td><td>${E(inst.payment_channel==='card'?'Card':inst.payment_channel==='momo'?'Mobile Money':'\u2014')}</td></tr>
+        ${currentPlan?`<tr><td style="color:var(--g);">Includes</td><td>${currentPlan.includesSms.toLocaleString()} SMS/month</td></tr>`:''}
       </tbody>
     </table>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn ba" onclick="startRenewNow()">Renew Now</button>
-      ${inst.plan_key!=='yearly'?'<button class="btn bg2" onclick="startUpgrade()">Upgrade to Yearly</button>':''}
     </div>
-    <p class="hint" style="margin-top:12px;">Renewing early extends your current renewal date \u2014 it doesn't reset it to today. Upgrading to yearly starts a fresh 12-month period from today and raises your student limit to 800.</p>
+    <p class="hint" style="margin-top:12px;">Renewing early extends your current renewal date \u2014 it doesn't reset it to today.</p>
     <div id="bv-msg" style="margin-top:10px;"></div>
+    <hr style="margin:18px 0;border-color:var(--b);">
+    <h2 style="font-size:.92rem;">Switch Plan</h2>
+    <p class="hint">Switching starts a fresh billing period from today at the new plan's price \u2014 any time left on your current plan isn't carried over.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <select id="bv-plan-picker" style="padding:8px 10px;border:1px solid var(--b);border-radius:6px;">
+        ${planOptions}
+      </select>
+      <button class="btn bg2" onclick="startPlanSwitch()">Switch Plan</button>
+    </div>
+    <hr style="margin:18px 0;border-color:var(--b);">
+    <h2 style="font-size:.92rem;">SMS Usage This Month</h2>
+    <div id="bv-sms-usage"><div class="es">Loading...</div></div>
   `;
+  loadSmsUsageDisplay();
+}
+
+function getCurrentBillingPeriod(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); // 'YYYY-MM'
+}
+async function getSmsOveragePaid(period){
+  const{data,error}=await sb.from('sms_overage_payments').select('amount')
+    .eq('institution_id',prof.institution_id).eq('billing_period',period);
+  if(error)throw error;
+  return(data||[]).reduce((s,p)=>s+(p.amount||0),0);
+}
+
+async function loadSmsUsageDisplay(){
+  const c=document.getElementById('bv-sms-usage');if(!c)return;
+  try{
+    await loadSmsBilling();
+    const period=getCurrentBillingPeriod();
+    const[used,paid]=await Promise.all([getMonthlySmsUsage(),getSmsOveragePaid(period)]);
+    const allowance=smsBilling?.monthly_allowance??DEFAULT_SMS_BILLING.monthly_allowance;
+    const rate=smsBilling?.overage_rate??DEFAULT_SMS_BILLING.overage_rate;
+    const pct=Math.min(100,Math.round((used/allowance)*100));
+    const over=used>allowance;
+    const barColor=over?'var(--d)':pct>=80?'#d97706':'var(--s)';
+    const overageUnits=Math.max(0,used-allowance);
+    const totalOwed=Math.round(overageUnits*rate*100)/100;
+    const remainingOwed=Math.max(0,Math.round((totalOwed-paid)*100)/100);
+    c.innerHTML=`
+      <div style="display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:4px;">
+        <span>${used.toLocaleString()} / ${allowance.toLocaleString()} SMS used</span>
+        <span style="color:${barColor};font-weight:600;">${over?'Over allowance':pct+'%'}</span>
+      </div>
+      <div style="background:var(--bg);border-radius:6px;height:10px;overflow:hidden;">
+        <div style="width:${pct}%;height:100%;background:${barColor};"></div>
+      </div>
+      <p class="hint" style="margin-top:8px;">Gate and Bus attendance notifications always send, regardless of this allowance — it only limits Bulk SMS and Fee Defaulter reminders.</p>
+      ${remainingOwed>0?`
+        <div style="background:#fee2e2;border:1px solid var(--d);border-radius:6px;padding:10px;margin-top:10px;">
+          <div style="font-weight:700;color:#991b1b;">GH&#8373;${remainingOwed.toFixed(2)} owed for this month's SMS overage</div>
+          <div style="font-size:.78rem;color:#991b1b;margin-top:2px;">${overageUnits.toLocaleString()} SMS over your allowance &times; GH&#8373;${rate.toFixed(2)}/SMS${paid>0?' — GH\u20B5'+paid.toFixed(2)+' already paid this month':''}</div>
+          <button class="btn bd bsm" style="margin-top:8px;" onclick="payOverageNow(${remainingOwed},'${period}')">Pay Overage Now</button>
+        </div>
+      `:''}
+    `;
+  }catch(e){
+    c.innerHTML='<div class="es" style="color:var(--d);">Could not load SMS usage.</div>';
+  }
+}
+
+async function payOverageNow(amountOwed,period){
+  const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
+  if(!inst)return;
+  payWithPaystack({amountPesewas:Math.round(amountOwed*100),email:inst.contact_email,onSuccess: async (reference)=>{
+    await callBillingEndpoint('pay-sms-overage',reference,{amount:amountOwed,period});
+    await loadSmsUsageDisplay();
+  }});
 }
 
 function payWithPaystack({amountPesewas, email, onSuccess}){
@@ -4779,28 +4981,32 @@ function payWithPaystack({amountPesewas, email, onSuccess}){
 async function startRenewNow(){
   const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
   if(!inst)return;
-  const amountPesewas=inst.plan_key==='yearly'?150000:15000; // keep in sync with _catalog.js
-  payWithPaystack({amountPesewas,email:inst.contact_email,onSuccess: async (reference)=>{
+  const plan=SCHOOL_CATALOG[inst.plan_key];
+  if(!plan){alert('Your current plan ("'+inst.plan_key+'") isn\'t recognized — contact NYANSATEK support before renewing.');return;}
+  payWithPaystack({amountPesewas:plan.price,email:inst.contact_email,onSuccess: async (reference)=>{
     await callBillingEndpoint('renew-subscription',reference);
   }});
 }
 
-async function startUpgrade(){
-  if(!confirm('Upgrade to the Yearly plan now for GH\u20B51,500? This starts a fresh 12-month period from today and raises your student limit to 800.'))return;
+async function startPlanSwitch(){
+  const targetKey=document.getElementById('bv-plan-picker').value;
+  const target=SCHOOL_CATALOG[targetKey];
+  if(!target)return;
+  if(!confirm(`Switch to ${target.label} for GH\u20B5${(target.price/100).toLocaleString()}/${target.cycle==='yearly'?'yr':'mo'}? This starts a fresh billing period from today — any time left on your current plan isn't carried over.`))return;
   const{data:inst}=await sb.from('institutions').select('*').eq('id',prof.institution_id).single();
   if(!inst)return;
-  payWithPaystack({amountPesewas:150000,email:inst.contact_email,onSuccess: async (reference)=>{
-    await callBillingEndpoint('upgrade-subscription',reference);
+  payWithPaystack({amountPesewas:target.price,email:inst.contact_email,onSuccess: async (reference)=>{
+    await callBillingEndpoint('upgrade-subscription',reference,{targetPlanKey:targetKey});
   }});
 }
 
-async function callBillingEndpoint(endpoint,reference){
+async function callBillingEndpoint(endpoint,reference,extra){
   const msg=document.getElementById('bv-msg');
   msg.innerHTML='<div class="es">Confirming payment...</div>';
   try{
     const res=await fetch(BILLING_API_BASE+'/'+endpoint,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({reference,tenantProduct:'school',tenantId:prof.institution_id})
+      body:JSON.stringify({reference,tenantProduct:'school',tenantId:prof.institution_id,...(extra||{})})
     });
     const data=await res.json();
     if(!res.ok||!data.ok){
