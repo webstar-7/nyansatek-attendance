@@ -12,9 +12,10 @@
 <script>
 const SUPABASE_URL      = "https://efgckodcvtzrjiabcktf.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Kd560On82iHu2UadJow4lQ_BLP1Hr4L";
-// SMS is sent via /.netlify/functions/send-sms, which holds the Hubtel
-// Client ID/Secret server-side -- see sendSMS() below. No SMS
-// credentials belong in this file; anything here is visible in page source.
+// SMS is sent via the 'school-send-sms' Supabase Edge Function, which
+// holds the Hubtel Client ID/Secret server-side -- see sendSMS() below.
+// No SMS credentials belong in this file; anything here is visible in
+// page source.
 const PAYSTACK_PUBLIC_KEY = "pk_live_f06348c9521967084c78419c709c740c7d3b51d2"; // same pk_live_... key already used in the storefront's js/checkout.js -- this is the PUBLIC key, safe to expose here
 const BILLING_API_BASE = "https://nyansatek.systems/.netlify/functions"; // renew/upgrade endpoints are centralized on the storefront -- see their _lib/cors.js for why this cross-origin call is allowed
 </script>
@@ -2315,17 +2316,16 @@ function buildBusNotifMsg(member,allowed,balance,busName){
 }
 
 // ── SMS ───────────────────────────────────────────────────────
-// Routed through a Netlify function so the Hubtel Client ID/Secret
-// stay server-side and are never exposed in this page's source.
-// Returns true/false so callers can tally sent/failed counts.
+// Routed through a Supabase Edge Function so the Hubtel Client ID/
+// Secret stay server-side and are never exposed in this page's source.
+// Returns true/false so callers can tally sent/failed counts. Was
+// previously a call to a Netlify function -- migrated as part of the
+// move off Netlify (see the matching change in the POS app).
 async function sendSMS(phone,message){
   try{
-    const res=await fetch('/.netlify/functions/send-sms',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({phone,message})
-    });
-    if(!res.ok)console.error('SMS failed:',await res.text());
-    return res.ok;
+    const{data,error}=await sb.functions.invoke('school-send-sms',{body:{phone,message}});
+    if(error||data?.error){console.error('SMS failed:',error||data?.error);return false;}
+    return true;
   }catch(e){console.error('SMS error:',e);return false;}
 }
 
