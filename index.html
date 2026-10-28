@@ -293,6 +293,25 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
 @media(max-width:900px){.ov-grid{grid-template-columns:1fr;}}
 @media(max-width:600px){.gd-tabs>div{grid-template-columns:1fr auto;}.gd-tabs span{grid-column:1/2;}.gd-b{padding-left:16px;}}
 
+
+/* SETTINGS */
+#stv.on{padding:16px;}
+.st-card{max-width:760px;margin-bottom:14px;}
+.st-usage{background:var(--bg);border-radius:var(--r);padding:10px 12px;margin:4px 0 14px;font-size:.84rem;}
+.st-usage .ov-bar{margin:8px 0 0;background:#fff;}
+.st-h{font-size:.78rem;font-weight:700;color:var(--g);margin:16px 0 4px;}
+.st-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid #edf0f4;cursor:pointer;}
+.st-row span{display:flex;flex-direction:column;gap:2px;}
+.st-row b{font-size:.86rem;color:var(--p);}
+.st-row small{font-size:.76rem;color:var(--g);}
+.st-sw{appearance:none;-webkit-appearance:none;flex:none;width:44px;height:24px;border-radius:999px;background:#cfd5e1;position:relative;cursor:pointer;transition:background .15s;margin:0;}
+.st-sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s;}
+.st-sw:checked{background:var(--s);}
+.st-sw:checked::after{transform:translateX(20px);}
+.st-sw:focus-visible{outline:2px solid var(--a);outline-offset:2px;}
+.st-ok{background:#e2f5ec;color:#0f6b43;border-radius:8px;padding:8px 10px;font-size:.82rem;margin-bottom:8px;}
+.st-pend{background:#fdf0d9;color:#8a5700;border-radius:8px;padding:8px 10px;font-size:.82rem;margin-bottom:10px;}
+
 /* ── PHONES / SMALL TABLETS: sidebar becomes a top bar, like the POS ── */
 @media(max-width:860px){
   #app:not([style*="none"]){grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;}
@@ -556,6 +575,10 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
                 <input type="text" id="mb-gname"></div>
               <div class="fg"><label>Guardian / Emergency Phone *</label>
                 <input type="tel" id="mb-gphone" placeholder="e.g. 0241234567"></div>
+              <div class="fg"><label>Second Guardian Name (optional)</label>
+                <input type="text" id="mb-g2name" placeholder="e.g. the other parent"></div>
+              <div class="fg"><label>Second Guardian Phone (optional)</label>
+                <input type="tel" id="mb-g2phone" placeholder="e.g. 0201234567"></div>
               <div style="display:flex;gap:10px;margin-bottom:10px;">
                 <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer;">
                   <input type="checkbox" id="mb-nentry" checked> Notify on Entry</label>
@@ -1131,6 +1154,9 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
     <!-- OVERVIEW (admin home) -->
     <div id="ov" class="view"><div class="es">Loading overview…</div></div>
 
+    <!-- SETTINGS -->
+    <div id="stv" class="view"></div>
+
     <!-- HOW TO USE -->
     <div id="hv" class="view"></div>
 
@@ -1591,6 +1617,10 @@ async function syncOneQueuedFinanceAction(rec){
       }
       rec.applied=true;await updateQueuedFinanceAction(rec);
     }
+    if(!rec.feeSmsSent){
+      try{await sendFeePaymentSMS({...p,member_id:realMemberId});}catch(e){console.warn('Fee payment SMS (sync) failed:',e);}
+      rec.feeSmsSent=true;await updateQueuedFinanceAction(rec);
+    }
     await removeQueuedFinanceAction(rec.clientRef);
     return true;
   }
@@ -1602,13 +1632,19 @@ async function syncOneQueuedFinanceAction(rec){
       const{data,error}=await sb.from('members').insert({
         institution_id:p.institution_id,member_code:code,full_name:p.full_name,
         class_or_dept:p.class_or_dept,gender:p.gender,guardian_name:p.guardian_name,
-        guardian_phone:p.guardian_phone,notify_entry:p.notify_entry,notify_exit:p.notify_exit,
+        guardian_phone:p.guardian_phone,guardian2_name:p.guardian2_name||null,guardian2_phone:p.guardian2_phone||null,
+        notify_entry:p.notify_entry,notify_exit:p.notify_exit,
         photo_url:p.photo_url
       }).select().single();
       if(error)throw error;
-      rec.serverMemberId=data.id;
+      rec.serverMemberId=data.id;rec.serverMemberCode=data.member_code;
       await updateQueuedFinanceAction(rec);
       await setIdMapping(rec.localId,data.id);
+    }
+    if(!rec.admissionSent){
+      // Best-effort: a failed text never blocks the student from syncing.
+      try{await sendAdmissionSMS({...rec.payload,member_code:rec.serverMemberCode||''});}catch(e){console.warn('Admission SMS (sync) failed:',e);}
+      rec.admissionSent=true;await updateQueuedFinanceAction(rec);
     }
     await removeQueuedFinanceAction(rec.clientRef);
     return true;
@@ -1675,6 +1711,16 @@ async function syncOneQueuedFinanceAction(rec){
         });
       }
       rec.notified=true;await updateQueuedFinanceAction(rec);
+    }
+    if(p.notify&&p.guardian2_phone&&!rec.notified2){
+      const ok=await sendSMS(p.guardian2_phone,p.sms_message);
+      if(ok){
+        await sb.from('notification_logs').insert({
+          institution_id:p.institution_id,attendance_log_id:rec.logId,
+          recipient_phone:p.guardian2_phone,message:p.sms_message,type:'gate_or_bus'
+        });
+      }
+      rec.notified2=true;await updateQueuedFinanceAction(rec);
     }
     await removeQueuedFinanceAction(rec.clientRef);
     return true;
@@ -1907,6 +1953,7 @@ function swV(v){
   if(v==='bv')loadBillingInfo();
   if(v==='ov')loadOverview();
   if(v==='hv')renderGuide();
+  if(v==='stv')loadSettingsView();
   if(v==='busv')initBusView();else stopBusCamera();
   if(v!=='gv')stopGateCamera();
 }
@@ -1916,7 +1963,7 @@ function buildNav(role){
   const tabs=role==='master'
     ?[['mv','Overview']]
     :role==='admin'
-    ?[['ov','Overview'],['gv','Gate'],['busv','Bus'],['av','Admin'],['bv','Billing'],['hv','How to use']]
+    ?[['ov','Overview'],['gv','Gate'],['busv','Bus'],['av','Admin'],['bv','Billing'],['stv','Settings'],['hv','How to use']]
     :role==='teacher'
     ?[['sv','My Scores'],['gv','Gate'],['hv','How to use']]
     :role==='parent'
@@ -1951,7 +1998,7 @@ async function initInstitution(){
   // dedicated gate-keeper role (no elevated role) -> the Gate itself.
   const landingView=prof.role==='admin'?'ov':prof.role==='teacher'?'sv':'gv';
   swV(landingView);startClock();
-  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();await loadSmsBilling();
+  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();await loadSmsBilling();await loadSmsSettings();
   await cacheOfflineEssentials();
   setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
   document.getElementById('scan-input').focus();
@@ -2007,9 +2054,14 @@ document.getElementById('scan-input').addEventListener('input',e=>{
 // Pickup mode, which Bus doesn't have; building the right fee-check
 // display text) before calling this.
 async function recordAttendanceScan({source,busId,mode,member,allowed,reason,feeBalance,feeDisplay}){
-  const shouldNotify=(allowed&&member.notify_entry&&mode==='entry')||
+  // School-wide message settings (Settings tab) switch whole kinds of
+  // alert off to save SMS cost; each student's own notify ticks still apply.
+  const smsEventOn=(!allowed?smsOn('sms_denied'):mode==='exit'?smsOn('sms_exit'):smsOn('sms_entry'))
+                   &&(source!=='bus'||smsOn('sms_bus'));
+  const shouldNotify=smsEventOn&&((allowed&&member.notify_entry&&mode==='entry')||
                      (allowed&&member.notify_exit&&mode==='exit')||
-                     (!allowed);
+                     (!allowed));
+  const secondPhone=smsOn('scan_alerts_both_guardians')?(guardianPhones(member,true)[1]||null):null;
   let smsMessage=null;
   if(shouldNotify&&member.guardian_phone){
     smsMessage=source==='bus'
@@ -2030,7 +2082,7 @@ async function recordAttendanceScan({source,busId,mode,member,allowed,reason,fee
         status:allowed?'allowed':'denied',deny_reason:reason||null,fee_balance:feeBalance,
         guardian_phone:member.guardian_phone||null,source,bus_id:busId||null,
         scanned_by:prof.id,scanned_by_name_snapshot:scannedByName,
-        notify:!!(shouldNotify&&member.guardian_phone),sms_message:smsMessage
+        notify:!!(shouldNotify&&member.guardian_phone),sms_message:smsMessage,guardian2_phone:secondPhone
       }
     });
     updateOfflineUI();
@@ -2056,6 +2108,14 @@ async function recordAttendanceScan({source,busId,mode,member,allowed,reason,fee
         recipient_phone:member.guardian_phone,message:smsMessage,type:'gate_or_bus'
       });
       notified=member.guardian_phone;
+      if(secondPhone){
+        await sendSMS(secondPhone,smsMessage);
+        await sb.from('notification_logs').insert({
+          institution_id:prof.institution_id,attendance_log_id:log?.id||null,
+          recipient_phone:secondPhone,message:smsMessage,type:'gate_or_bus'
+        });
+        notified+=', '+secondPhone;
+      }
     }
     return{notified};
   }catch(err){
@@ -2544,12 +2604,14 @@ async function saveMember(){
   const gender=document.getElementById('mb-gender').value;
   const gname=document.getElementById('mb-gname').value.trim();
   const gphone=document.getElementById('mb-gphone').value.trim();
+  const g2name=document.getElementById('mb-g2name').value.trim();
+  const g2phone=document.getElementById('mb-g2phone').value.trim();
   const ne=document.getElementById('mb-nentry').checked;
   const nx=document.getElementById('mb-nexit').checked;
   if(!name){alert('Full name is required.');return;}
 
   const resetForm=()=>{
-    ['mb-name','mb-dept','mb-gname','mb-gphone'].forEach(id=>document.getElementById(id).value='');
+    ['mb-name','mb-dept','mb-gname','mb-gphone','mb-g2name','mb-g2phone'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('mb-gender').value='';
     mbPhoto=null;document.getElementById('mb-photo-preview').style.display='none';document.getElementById('mb-photo-hint').style.display='block';
   };
@@ -2568,7 +2630,8 @@ async function saveMember(){
     const localRow={
       id:localId,institution_id:prof.institution_id,member_code:tempCode,full_name:name,
       class_or_dept:dept||null,gender:gender||null,guardian_name:gname||null,
-      guardian_phone:gphone||null,notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null,
+      guardian_phone:gphone||null,guardian2_name:g2name||null,guardian2_phone:g2phone||null,
+      notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null,
       is_active:true,created_at:new Date().toISOString()
     };
     members.push(localRow);
@@ -2577,6 +2640,7 @@ async function saveMember(){
       type:'create_member',localId,
       payload:{institution_id:prof.institution_id,full_name:name,class_or_dept:dept||null,
         gender:gender||null,guardian_name:gname||null,guardian_phone:gphone||null,
+        guardian2_name:g2name||null,guardian2_phone:g2phone||null,
         notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null}
     });
     resetForm();renderMemberList(members);updateOfflineUI();
@@ -2594,6 +2658,7 @@ async function saveMember(){
         institution_id:prof.institution_id,
         member_code:code,full_name:name,class_or_dept:dept||null,gender:gender||null,
         guardian_name:gname||null,guardian_phone:gphone||null,
+        guardian2_name:g2name||null,guardian2_phone:g2phone||null,
         notify_entry:ne,notify_exit:nx,photo_url:mbPhoto||null
       }));
       attempts++;
@@ -2607,7 +2672,10 @@ async function saveMember(){
   }
   L(false);
   resetForm();
-  await loadMembers();alert('Member registered! ID Number: '+code);
+  await loadMembers();
+  let admSent=0;
+  try{admSent=await sendAdmissionSMS({full_name:name,class_or_dept:dept,member_code:code,guardian_phone:gphone,guardian2_phone:g2phone});}catch(e){console.warn('Admission SMS failed:',e);}
+  alert('Member registered! ID Number: '+code+(admSent?'\nAdmission text sent to '+admSent+' guardian'+(admSent>1?'s':'')+'.':''));
 }
 
 function filterMemberSearch(val){
@@ -2690,6 +2758,7 @@ async function loadStudentProfile(memberId){
             <tr><td style="padding:3px 0;color:var(--g);width:120px;">Class</td><td>${E(cls?cls.class_name+' ('+cls.level+')':(m.class_or_dept||'—'))}</td></tr>
             <tr><td style="padding:3px 0;color:var(--g);">Gender</td><td>${E(m.gender||'—')}</td></tr>
             <tr><td style="padding:3px 0;color:var(--g);">Guardian</td><td>${E(m.guardian_name||'—')} ${m.guardian_phone?'('+E(m.guardian_phone)+')':''}</td></tr>
+            ${(m.guardian2_name||m.guardian2_phone)?`<tr><td style="padding:3px 0;color:var(--g);">Second guardian</td><td>${E(m.guardian2_name||'—')} ${m.guardian2_phone?'('+E(m.guardian2_phone)+')':''}</td></tr>`:''}
             <tr><td style="padding:3px 0;color:var(--g);">Fees Balance</td><td>
               ${fee.status==='no_term'?'<span class="badge by">No active fee term</span>'
                 :fee.status==='paid'?'<span class="badge bg">Paid up ('+E(fee.term)+')</span>'
@@ -2704,6 +2773,7 @@ async function loadStudentProfile(memberId){
     </div>
     <button class="btn bsm ba" style="margin-top:14px;" onclick='printMemberID(${JSON.stringify(m)})'>&#127760; Print ID Card</button>
   </div>
+  ${guardianEditCard(m)}
   <div class="card" style="max-width:640px;margin-top:14px;">
     <h3 style="font-size:.88rem;margin-bottom:10px;color:var(--p);">Parent / Guardian Portal Accounts</h3>
     <div id="sp-guardian-list"><div class="es">Loading...</div></div>
@@ -2964,7 +3034,9 @@ async function recordFeePayment(){
   L(false);
   resetForm();
   await loadPaymentHistory();
-  if(confirm('Payment recorded! Print receipt now?'))await printReceipt(ins.id);
+  let feeSent=0;
+  try{feeSent=await sendFeePaymentSMS(ins);}catch(e){console.warn('Fee payment SMS failed:',e);}
+  if(confirm('Payment recorded!'+(feeSent?' Confirmation text sent to '+feeSent+' guardian'+(feeSent>1?'s':'')+'.':'')+'\n\nPrint the receipt now? (Two copies on one A4 sheet — one for the guardian, one for the school.)'))await printReceipt(ins.id);
 }
 
 async function loadPaymentHistory(){
@@ -3004,45 +3076,78 @@ async function printReceipt(paymentId){
   printIF(buildReceiptHtml(p,totalPaid,termAmt,balance));
 }
 function buildReceiptHtml(p,totalPaid,termAmt,balance){
+  // One A4 sheet, two identical halves: the top half is the parent /
+  // guardian copy and the bottom half the school copy, with a cut line
+  // between them. Each half is exactly 148.5mm (half of A4) tall.
+  const th=idCardTheme();
   const school=E(institution?.name||'Institution');
+  const contact=[institution?.address,institution?.contact_phone,institution?.contact_email].filter(Boolean).map(E).join(' &nbsp;|&nbsp; ');
   const receiptNo=E(p.receipt_ref||('PAY-'+String(p.id).slice(0,8).toUpperCase()));
-  const dateStr=E(p.payment_date||new Date(p.created_at).toLocaleDateString());
-  const fmt=n=>(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const dateStr=E(p.payment_date?new Date(p.payment_date+'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'}):new Date(p.created_at).toLocaleDateString());
+  const fmt=n=>'GHS '+(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const row=(k,v)=>`<div class="r"><span>${k}</span><b>${v}</b></div>`;
+  const copy=(label,top)=>`<section class="half${top?' top':''}">
+    <header style="background:${th.c1};">
+      <div class="mono" style="background:${th.ac};color:${th.c1};">${E(idCardInitials(institution?.name||''))}</div>
+      <div class="sch"><h1>${school}</h1>${contact?`<p>${contact}</p>`:''}</div>
+      <div class="ttl"><b>Fee Payment Receipt</b><span style="background:${th.ac};color:${th.c1};">${label}</span></div>
+    </header>
+    <div class="body">
+      <div class="det">
+        ${row('Receipt No.',receiptNo)}
+        ${row('Date',dateStr)}
+        ${row('Student',E(p.members?.full_name||'—'))}
+        ${row('Student ID',E(p.members?.member_code||'—'))}
+        ${row('Class',E(p.members?.class_or_dept||'—'))}
+        ${row('Fee Term',E(p.fee_terms?.term_name||'—'))}
+        ${row('Payment Method',E(p.payment_method||'—'))}
+      </div>
+      <div class="tot" style="border-color:${th.c1};">
+        <div class="paid" style="background:${th.c1};"><span>Amount paid</span><b>${fmt(p.amount_paid)}</b></div>
+        ${row('Total fee (this term)',fmt(termAmt))}
+        ${row('Total paid (this term)',fmt(totalPaid))}
+        <div class="r bal ${balance>0?'owe':'ok'}"><span>Balance remaining</span><b>${fmt(balance)}</b></div>
+        ${balance<=0&&termAmt>0?'<div class="full">Fees fully paid for this term</div>':''}
+      </div>
+    </div>
+    <div class="sig"><div>Received by (name &amp; signature)</div><div>School stamp</div><div>Parent / Guardian</div></div>
+    <div class="foot">Printed ${new Date().toLocaleString()} &nbsp;|&nbsp; Powered by NYANSATEK</div>
+  </section>`;
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receipt ${receiptNo}</title>
   <style>
-    @page{size:A5;margin:12mm;}
-    *{box-sizing:border-box;}
-    body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;}
-    .hdr{text-align:center;border-bottom:2px solid #111827;padding-bottom:8px;margin-bottom:14px;}
-    .hdr h1{font-size:15pt;margin:0;letter-spacing:.3px;}
-    .hdr p{font-size:9pt;color:#6b7280;margin:3px 0 0;}
-    .row{display:flex;justify-content:space-between;font-size:10pt;margin:5px 0;padding-bottom:3px;border-bottom:1px dotted #e5e7eb;}
-    .row span:first-child{color:#6b7280;}
-    .row span:last-child{font-weight:600;text-align:right;}
-    .totals{border-top:2px solid #111827;margin-top:10px;padding-top:8px;}
-    .totals .row{border-bottom:none;font-size:10.5pt;}
-    .grand{font-size:12pt;font-weight:700;}
-    .bal{color:${balance>0?'#dc2626':'#16a34a'};}
-    .sig{margin-top:34px;display:flex;justify-content:space-between;}
-    .sig div{border-top:1px solid #9ca3af;width:42%;text-align:center;padding-top:4px;font-size:8.5pt;color:#6b7280;}
-    .foot{text-align:center;margin-top:16px;font-size:7.5pt;color:#9ca3af;}
+    @page{size:A4 portrait;margin:0;}
+    *{box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}
+    html,body{margin:0;padding:0;}
+    body{font-family:'Segoe UI',Arial,Helvetica,sans-serif;color:#141b2b;width:210mm;height:297mm;overflow:hidden;}
+    .half{height:148.5mm;padding:9mm 13mm 7mm;display:flex;flex-direction:column;overflow:hidden;page-break-inside:avoid;}
+    .top{border-bottom:.4mm dashed #9aa3b2;position:relative;overflow:visible;}
+    .top::after{content:"\\2702  Cut here";position:absolute;left:50%;bottom:-2.4mm;transform:translateX(-50%);background:#fff;padding:0 3mm;font-size:7.5pt;color:#7b8597;letter-spacing:.3px;}
+    header{display:flex;align-items:center;gap:4mm;padding:3.5mm 4.5mm;border-radius:2.5mm;color:#fff;}
+    .mono{width:12mm;height:12mm;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:9pt;}
+    .sch{flex:1;min-width:0;}
+    .sch h1{margin:0;font-size:14pt;line-height:1.15;text-transform:uppercase;letter-spacing:.2px;}
+    .sch p{margin:1mm 0 0;font-size:7.5pt;opacity:.9;}
+    .ttl{text-align:right;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:1.2mm;}
+    .ttl b{font-size:10pt;}
+    .ttl span{font-size:7pt;font-weight:700;padding:.8mm 2.5mm;border-radius:5mm;text-transform:uppercase;letter-spacing:.4px;}
+    .body{display:grid;grid-template-columns:1.25fr 1fr;gap:7mm;margin-top:5mm;flex:1;min-height:0;}
+    .r{display:flex;justify-content:space-between;gap:4mm;font-size:9.5pt;padding:1.6mm 0;border-bottom:.25mm dotted #d5dae3;}
+    .r span{color:#5b6576;}
+    .r b{text-align:right;font-weight:600;}
+    .tot{border:.4mm solid;border-radius:2.5mm;padding:0 3.5mm 2mm;align-self:start;overflow:hidden;}
+    .paid{margin:0 -3.5mm 1.5mm;padding:3mm 3.5mm;color:#fff;display:flex;flex-direction:column;}
+    .paid span{font-size:8pt;opacity:.85;}
+    .paid b{font-size:15pt;}
+    .bal{border-bottom:0;font-size:10.5pt;}
+    .bal.owe b{color:#c62828;}
+    .bal.ok b{color:#1b8a4b;}
+    .full{font-size:8pt;font-weight:700;color:#1b8a4b;text-align:center;margin-top:1mm;}
+    .sig{display:grid;grid-template-columns:1.3fr 1fr 1.3fr;gap:7mm;margin-top:4mm;}
+    .sig div{border-top:.3mm solid #9aa3b2;padding-top:1.2mm;font-size:7.5pt;color:#5b6576;text-align:center;margin-top:9mm;}
+    .foot{font-size:6.5pt;color:#9aa3b2;text-align:center;margin-top:2.5mm;}
   </style></head><body>
-    <div class="hdr"><h1>${school}</h1><p>Official Fee Payment Receipt</p></div>
-    <div class="row"><span>Receipt No.</span><span>${receiptNo}</span></div>
-    <div class="row"><span>Date</span><span>${dateStr}</span></div>
-    <div class="row"><span>Student</span><span>${E(p.members?.full_name||'—')}</span></div>
-    <div class="row"><span>Student ID</span><span>${E(p.members?.member_code||'—')}</span></div>
-    <div class="row"><span>Class</span><span>${E(p.members?.class_or_dept||'—')}</span></div>
-    <div class="row"><span>Fee Term</span><span>${E(p.fee_terms?.term_name||'—')}</span></div>
-    <div class="row"><span>Payment Method</span><span>${E(p.payment_method||'—')}</span></div>
-    <div class="totals">
-      <div class="row grand"><span>Amount Paid Today</span><span>GHS ${fmt(p.amount_paid)}</span></div>
-      <div class="row"><span>Total Paid (this term)</span><span>GHS ${fmt(totalPaid)}</span></div>
-      <div class="row"><span>Total Fee (this term)</span><span>GHS ${fmt(termAmt)}</span></div>
-      <div class="row bal"><span>Balance Remaining</span><span>GHS ${fmt(balance)}</span></div>
-    </div>
-    <div class="sig"><div>Received By</div><div>Parent / Guardian</div></div>
-    <div class="foot">Generated ${new Date().toLocaleString()} — Powered by NYANSATEK</div>
+    ${copy('Parent / Guardian copy',true)}
+    ${copy('School copy',false)}
   </body></html>`;
 }
 
@@ -3104,6 +3209,174 @@ async function loadNotifHistory(){
     <td style="font-weight:600;">${E(r.recipient_phone)}</td>
     <td style="font-size:.75rem;color:var(--g);">${E(r.message)}</td>
   </tr>`).join('')}</tbody></table>`;
+}
+
+// ── MESSAGE SETTINGS (per school) ─────────────────────────────
+// Which automatic texts a school sends. Stored in school_sms_settings;
+// a missing row means "everything on", which is exactly how the app
+// behaved before these settings existed. The last-known copy is kept
+// in localStorage so the gate still honours it while offline.
+const SMS_SETTING_DEFAULTS={sms_entry:true,sms_exit:true,sms_denied:true,sms_bus:true,sms_admission:true,sms_fee_payment:true,scan_alerts_both_guardians:false,requested_sender_id:null};
+let smsSettings=null;
+function smsSettingsCacheKey(){return 'nyansatek_sms_settings_'+(prof?.institution_id||'');}
+async function loadSmsSettings(){
+  if(!prof?.institution_id){smsSettings={...SMS_SETTING_DEFAULTS};return smsSettings;}
+  try{
+    const{data,error}=await sb.from('school_sms_settings').select('*').eq('institution_id',prof.institution_id).maybeSingle();
+    if(error)throw error;
+    smsSettings={...SMS_SETTING_DEFAULTS,...(data||{})};
+    try{localStorage.setItem(smsSettingsCacheKey(),JSON.stringify(smsSettings));}catch(e){}
+  }catch(e){
+    let cached=null;try{cached=JSON.parse(localStorage.getItem(smsSettingsCacheKey())||'null');}catch(_){}
+    smsSettings={...SMS_SETTING_DEFAULTS,...(cached||{})};
+  }
+  return smsSettings;
+}
+function smsOn(key){
+  if(!smsSettings){try{const c=JSON.parse(localStorage.getItem(smsSettingsCacheKey())||'null');if(c)smsSettings={...SMS_SETTING_DEFAULTS,...c};}catch(e){}}
+  const v=(smsSettings||SMS_SETTING_DEFAULTS)[key];
+  return (v===undefined||v===null)?!!SMS_SETTING_DEFAULTS[key]:!!v;
+}
+// Phone numbers to text for a student, without sending the same number twice.
+function guardianPhones(m,both=true){
+  const seen=new Set(),out=[];
+  [m?.guardian_phone,both?m?.guardian2_phone:null].forEach(p=>{
+    const v=String(p||'').trim();const k=v.replace(/\D/g,'');
+    if(v&&k&&!seen.has(k)){seen.add(k);out.push(v);}
+  });
+  return out;
+}
+async function sendAndLogSMS(phone,message,type,extra){
+  const ok=await sendSMS(phone,message);
+  if(ok){
+    try{await sb.from('notification_logs').insert({institution_id:prof.institution_id,recipient_phone:phone,message,type,...(extra||{})});}catch(e){}
+  }
+  return ok;
+}
+
+// ── ADMISSION CONFIRMATION SMS ────────────────────────────────
+async function sendAdmissionSMS(m){
+  if(!smsOn('sms_admission'))return 0;
+  const phones=guardianPhones(m,true);if(!phones.length)return 0;
+  const school=institution?.name||'Our school';
+  const msg=`${school}: Welcome! ${m.full_name} has been admitted${m.class_or_dept?' into '+m.class_or_dept:''}. Student ID: ${m.member_code}. We look forward to working with you.`;
+  let sent=0;
+  for(const ph of phones){if(await sendAndLogSMS(ph,msg,'admission'))sent++;}
+  return sent;
+}
+
+// ── FEE PAYMENT CONFIRMATION SMS ──────────────────────────────
+async function sendFeePaymentSMS(pay){
+  if(!smsOn('sms_fee_payment'))return 0;
+  let m=members.find(x=>x.id===pay.member_id);
+  if(!m){try{const{data}=await sb.from('members').select('*').eq('id',pay.member_id).maybeSingle();m=data;}catch(e){}}
+  if(!m)return 0;
+  const phones=guardianPhones(m,true);if(!phones.length)return 0;
+  let termName='',termAmt=0,paid=0;
+  try{
+    const{data:t}=await sb.from('fee_terms').select('term_name,amount').eq('id',pay.fee_term_id).maybeSingle();
+    termName=t?.term_name||'';termAmt=Number(t?.amount||0);
+    const{data:all}=await sb.from('fee_payments').select('amount_paid').eq('member_id',pay.member_id).eq('fee_term_id',pay.fee_term_id);
+    paid=(all||[]).reduce((s,x)=>s+Number(x.amount_paid||0),0);
+  }catch(e){}
+  const bal=Math.max(0,termAmt-paid);
+  const school=institution?.name||'School';
+  const msg=`${school}: Payment of ${GHP(Number(pay.amount_paid||0))} received for ${m.full_name}${termName?' ('+termName+')':''}. Receipt ${pay.receipt_ref||''}. `
+    +(termAmt>0?(bal>0?`Balance: ${GHP(bal)}.`:'Fees fully paid.'):'')+' Thank you.';
+  let sent=0;
+  for(const ph of phones){if(await sendAndLogSMS(ph,msg.replace(/\s+/g,' ').trim(),'fee_receipt'))sent++;}
+  return sent;
+}
+
+// ── GUARDIAN CONTACTS (edit on Student Profile) ───────────────
+async function saveGuardianContacts(memberId){
+  const v=id=>document.getElementById(id)?.value.trim()||null;
+  const upd={guardian_name:v('spg-g1n'),guardian_phone:v('spg-g1p'),guardian2_name:v('spg-g2n'),guardian2_phone:v('spg-g2p')};
+  if(!upd.guardian_phone){alert('The first guardian’s phone number is required — it is used for gate alerts.');return;}
+  L(true);
+  const{error}=await sb.from('members').update(upd).eq('id',memberId).eq('institution_id',prof.institution_id);
+  L(false);
+  if(error){alert('Could not save guardian contacts: '+error.message);return;}
+  const m=members.find(x=>x.id===memberId);if(m)Object.assign(m,upd);
+  try{cacheRowsOffline('membersCache',prof.institution_id,members);}catch(e){}
+  alert('Guardian contacts saved.');
+  loadStudentProfile(memberId);
+}
+function guardianEditCard(m){
+  return `<div class="card" style="max-width:640px;margin-top:14px;">
+    <h3 style="font-size:.88rem;margin-bottom:4px;color:var(--p);">Guardian contacts for text messages</h3>
+    <p class="hint">Admission and fee payment texts go to both guardians. Gate alerts go to the first guardian${smsOn('scan_alerts_both_guardians')?' and the second guardian':''} (change this in Settings).</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="fg"><label>First guardian name</label><input type="text" id="spg-g1n" value="${E(m.guardian_name||'')}"></div>
+      <div class="fg"><label>First guardian phone *</label><input type="tel" id="spg-g1p" value="${E(m.guardian_phone||'')}" placeholder="e.g. 0241234567"></div>
+      <div class="fg"><label>Second guardian name</label><input type="text" id="spg-g2n" value="${E(m.guardian2_name||'')}" placeholder="e.g. the other parent"></div>
+      <div class="fg"><label>Second guardian phone</label><input type="tel" id="spg-g2p" value="${E(m.guardian2_phone||'')}" placeholder="e.g. 0201234567"></div>
+    </div>
+    <button class="btn bsm" onclick="saveGuardianContacts('${m.id}')">Save guardian contacts</button>
+  </div>`;
+}
+
+// ── SETTINGS VIEW ─────────────────────────────────────────────
+async function loadSettingsView(){
+  const el=document.getElementById('stv');if(!el)return;
+  el.innerHTML='<div class="es">Loading settings…</div>';
+  await Promise.all([loadSmsSettings(),loadSmsBilling()]);
+  let used=null;try{used=await getMonthlySmsUsage();}catch(e){}
+  const allowance=smsBilling?.monthly_allowance??DEFAULT_SMS_BILLING.monthly_allowance;
+  const s=smsSettings;
+  const approved=smsBilling?.sender_id||'';
+  const sw=(key,title,desc)=>`<label class="st-row"><span><b>${title}</b><small>${desc}</small></span>
+    <input type="checkbox" class="st-sw" id="st-${key}" ${s[key]?'checked':''}></label>`;
+  const pct=used!==null&&allowance?Math.min(100,Math.round(used/allowance*100)):0;
+  el.innerHTML=`
+  <div class="card st-card">
+    <h2>Text messages to parents</h2>
+    <p class="hint">Choose which automatic texts your school sends. Every text counts towards your monthly SMS allowance, so turning off the ones you don’t need keeps costs down.</p>
+    <div class="st-usage"><div><b>${used===null?'—':used.toLocaleString()}</b> of ${Number(allowance).toLocaleString()} texts used this month</div>
+      <div class="ov-bar"><i style="width:${pct}%;${pct>=90?'background:var(--d);':''}"></i></div></div>
+    <h3 class="st-h">Gate and bus</h3>
+    ${sw('sms_entry','Arrival (scan in)','Text the parent when their child is scanned in at the gate or boards the bus.')}
+    ${sw('sms_exit','Departure (scan out)','Text the parent when their child is scanned out at the gate or dropped off by the bus.')}
+    ${sw('sms_denied','Denied entry','Text the parent when their child is refused entry because of unpaid fees.')}
+    ${sw('sms_bus','Bus alerts','Turn off to stop all bus texts while keeping gate texts.')}
+    ${sw('scan_alerts_both_guardians','Send gate and bus texts to both guardians','Off: only the first guardian is texted, which halves the cost of gate alerts.')}
+    <h3 class="st-h">Office</h3>
+    ${sw('sms_admission','Admission confirmation','Text both guardians when a new student is registered.')}
+    ${sw('sms_fee_payment','Fee payment confirmation','Text both guardians when a fee payment is recorded, with the remaining balance.')}
+    <p class="hint" style="margin-top:10px;">Each student’s own “Notify on Entry / Exit” ticks still apply on top of these settings. Bulk SMS and fee reminders are sent only when you send them.</p>
+    <button class="btn ba" onclick="saveSmsSettings()">Save message settings</button>
+  </div>
+  <div class="card st-card">
+    <h2>Sender name</h2>
+    <p class="hint">The name parents see as the sender of your texts. Today your texts come from <b>${E(approved||'NYANSATEK')}</b>.</p>
+    ${approved?`<p class="st-ok">Your school’s own sender name <b>${E(approved)}</b> is approved and in use.</p>`:''}
+    <p class="hint">${approved?'To change it, request a new name below.':'To send texts under your school’s name, request it below.'} Sender names must be 3–11 letters or numbers (for example <b>ACCRAROYAL</b>), and every name must be registered with the mobile networks, which takes about two weeks. Until it is approved, your texts keep coming from ${E(approved||'NYANSATEK')}.</p>
+    <div class="fg" style="max-width:320px;"><label>Requested sender name</label>
+      <input type="text" id="st-sender" maxlength="11" value="${E(s.requested_sender_id||'')}" placeholder="e.g. ACCRAROYAL" oninput="this.value=this.value.replace(/[^A-Za-z0-9 ]/g,'')"></div>
+    ${s.requested_sender_id&&s.requested_sender_id!==approved?`<p class="st-pend">Requested: <b>${E(s.requested_sender_id)}</b> — waiting for NYANSATEK to register it with the networks.</p>`:''}
+    <button class="btn" onclick="requestSenderId()">Request this sender name</button>
+  </div>`;
+}
+async function saveSmsSettings(){
+  const keys=['sms_entry','sms_exit','sms_denied','sms_bus','scan_alerts_both_guardians','sms_admission','sms_fee_payment'];
+  const row={institution_id:prof.institution_id,updated_at:new Date().toISOString()};
+  keys.forEach(k=>row[k]=!!document.getElementById('st-'+k)?.checked);
+  L(true);
+  const{error}=await sb.from('school_sms_settings').upsert(row,{onConflict:'institution_id'});
+  L(false);
+  if(error){alert('Could not save settings: '+error.message);return;}
+  await loadSmsSettings();
+  alert('Message settings saved. They apply on every device from the next scan.');
+}
+async function requestSenderId(){
+  const v=(document.getElementById('st-sender')?.value||'').trim();
+  if(!/^[A-Za-z0-9 ]{3,11}$/.test(v)){alert('Use 3 to 11 letters or numbers, for example ACCRAROYAL.');return;}
+  L(true);
+  const{error}=await sb.from('school_sms_settings').upsert({institution_id:prof.institution_id,requested_sender_id:v,updated_at:new Date().toISOString()},{onConflict:'institution_id'});
+  L(false);
+  if(error){alert('Could not save your request: '+error.message);return;}
+  await loadSettingsView();
+  alert('Request saved. NYANSATEK will register "'+v+'" with the networks. Your texts keep coming from the current sender until it is approved.');
 }
 
 // ── OVERVIEW (admin home) ─────────────────────────────────────
@@ -3294,7 +3567,7 @@ function renderGuide(){
   <div class="card gd-intro">
     <h2>How to use NYANSATEK School Management System</h2>
     <p class="hint">Everything you need to set up your school and run it day to day. Tap a heading to open it; the buttons take you straight to the right screen.</p>
-    <div class="gd-jump">${['setup','tabs','student','teacher-ob','parent-ob','pickup','staff','gate','bus','fees','grades','ids','sms','daily'].map((k,i)=>`<a href="#gd-${k}" onclick="document.getElementById('gd-${k}').open=true">${['Setting up','What each screen does','Students','Teachers','Parents','Pickups','Staff','Gate','Bus','Fees','Grades & report cards','ID cards','SMS','Daily routine'][i]}</a>`).join('')}</div>
+    <div class="gd-jump">${['setup','tabs','student','teacher-ob','parent-ob','pickup','staff','gate','bus','fees','grades','ids','sms','daily'].map((k,i)=>`<a href="#gd-${k}" onclick="document.getElementById('gd-${k}').open=true">${['Setting up','What each screen does','Students','Teachers','Parents','Pickups','Staff','Gate','Bus','Fees','Grades & report cards','ID cards','Text messages & Settings','Daily routine'][i]}</a>`).join('')}</div>
   </div>
   ${sec('setup','Setting up your school (do these in order)',`
     <p>A new school takes about an hour to set up. The <b>Overview</b> screen ticks these off as you go.</p>
@@ -3318,6 +3591,7 @@ function renderGuide(){
       <div><b>Gate</b><span>Scan students in and out, and verify pickups.</span>${openV('gv','Open')}</div>
       <div><b>Bus</b><span>Scan students boarding and getting off a bus.</span>${openV('busv','Open')}</div>
       <div><b>Billing</b><span>Your NYANSATEK subscription: plan, renewal date and payment.</span>${openV('bv','Open')}</div>
+      <div><b>Settings</b><span>Choose which texts parents receive (to control SMS cost) and request your school’s own sender name.</span>${openV('stv','Open')}</div>
       ${tabs.map(([n,k,d])=>`<div><b>Admin → ${n}</b><span>${d}</span>${open(k)}</div>`).join('')}
     </div>`)}
   ${sec('student','Onboarding a student',`
@@ -3325,7 +3599,8 @@ function renderGuide(){
       `Go to <b>Admin → Members</b>. ${open('mb')}`,
       'Take or upload a photo — it appears on the ID card and on the gate screen.',
       'Enter the full name and class. Leave <b>ID Number</b> empty and one is created automatically.',
-      'Enter the guardian’s name and phone, and tick <b>Notify on Entry</b> / <b>Notify on Exit</b> for SMS alerts. Tap <b>Register Member</b>.',
+      'Enter the first guardian’s name and phone, and the second guardian’s (for example mother and father) if you have them. Tick <b>Notify on Entry</b> / <b>Notify on Exit</b> for gate alerts. Tap <b>Register Member</b> — both guardians get an admission text with the student’s ID number.',
+      `Need to add or change a guardian later? Use <b>Guardian contacts</b> on the student’s profile. ${open('sp')}`,
       `Enroll the student into their class under <b>Classes → Enroll Student into Class</b>. ${open('cl')}`,
       `Print their ID card from <b>Student Profile</b>. ${open('sp')}`
     ])}`)}
@@ -3370,7 +3645,8 @@ function renderGuide(){
     ${ol([
       `In <b>Admin → Fee Terms</b>, add a fee term with an amount. Leave Class as “All Classes” for a default rate, or add a separate term per class. Tick “current active term”. ${open('ft')}`,
       'Save the <b>Gate Fee Policy</b>: the balance a student can owe before being denied, and how many days into the term before anyone is denied.',
-      `Record payments in <b>Fee Payments</b> — the student is allowed through the gate as soon as their balance clears. ${open('fp')}`,
+      `Record payments in <b>Fee Payments</b>. Both guardians get a text confirming the amount and the balance left, and the student is allowed through the gate as soon as their balance clears. ${open('fp')}`,
+      'Print the receipt: one A4 sheet holds two copies. Cut along the dotted line — give the top half (guardian copy) to the parent and file the bottom half (school copy).',
       `For reminders, use <b>Reports → Fee Defaulters &amp; SMS Reminder</b>. ${open('rp')}`
     ])}`)}
   ${sec('grades','Grades and report cards',`
@@ -3388,9 +3664,11 @@ function renderGuide(){
       'Pickup persons: <b>Pickups</b> → select the student → <b>ID</b> beside the person.',
       'Cards print in colour with your school’s name. Print on card stock at 100% scale and cut to size.'
     ])}`)}
-  ${sec('sms','Text messages to parents',`
-    <p>Parents get automatic texts when their child is scanned in or out (if ticked on the student’s record) and when entry is denied.</p>
+  ${sec('sms','Text messages and Settings',`
+    <p>Parents get automatic texts when their child is admitted, when a fee payment is recorded, when their child is scanned in or out, and when entry is denied.</p>
     ${ol([
+      `Open <b>Settings</b> to choose which of these texts your school sends — for example turn off departure texts, or send gate alerts to the first guardian only, to keep SMS costs down. Your texts used this month are shown at the top. ${openV('stv','Open Settings')}`,
+      'Want texts to come from your school’s name instead of NYANSATEK? Request a sender name (3–11 letters or numbers) in Settings. NYANSATEK registers it with the mobile networks, which takes about two weeks; until then texts keep coming from NYANSATEK.',
       `To text everyone at once, use <b>Bulk SMS</b>; filter by class to reach one class. ${open('bs')}`,
       `See everything that was sent under <b>Notifications</b>. ${open('nl')}`
     ])}`)}
@@ -3576,14 +3854,16 @@ async function initMaster(){
   document.getElementById('fbiz').innerText='NYANSATEK';
   swV('mv');
   L(true);
-  const[{data},{data:billing}]=await Promise.all([
+  const[{data},{data:billing},{data:smsReq}]=await Promise.all([
     sb.from('institutions').select('*').order('name'),
-    sb.from('sms_billing').select('*')
+    sb.from('sms_billing').select('*'),
+    sb.from('school_sms_settings').select('institution_id,requested_sender_id').then(r=>r,()=>({data:[]}))
   ]);
   L(false);
   instList=data||[];
   masterSmsBillingMap={};
   (billing||[]).forEach(b=>{masterSmsBillingMap[b.institution_id]=b;});
+  masterSenderRequests={};(smsReq||[]).forEach(r=>{if(r.requested_sender_id)masterSenderRequests[r.institution_id]=r.requested_sender_id;});
   renderInstList();
   const sel=document.getElementById('mo-inst');
   sel.innerHTML='<option value="">-- Select --</option>';
@@ -3591,12 +3871,12 @@ async function initMaster(){
   setDef('mo-s','mo-e');
 }
 
-let masterSmsBillingMap={};
+let masterSmsBillingMap={},masterSenderRequests={};
 function renderInstList(){
   const c=document.getElementById('instlist');
   if(!instList.length){c.innerHTML='<div class="es">No institutions registered yet.</div>';return;}
   c.innerHTML=`<table><thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Status</th><th>Since</th>
-    <th>SMS Allowance / mo</th><th>Overage Rate (GH&#8373;)</th><th></th></tr></thead>
+    <th>SMS Allowance / mo</th><th>Overage Rate (GH&#8373;)</th><th>Approved Sender ID</th><th></th></tr></thead>
   <tbody>${instList.map(i=>{
     const b=masterSmsBillingMap[i.id]||DEFAULT_SMS_BILLING;
     return `<tr>
@@ -3607,6 +3887,8 @@ function renderInstList(){
     <td>${new Date(i.created_at).toLocaleDateString()}</td>
     <td><input type="number" min="0" id="msb-allow-${i.id}" value="${b.monthly_allowance}" style="width:90px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;font-size:.78rem;"></td>
     <td><input type="number" min="0" step="0.01" id="msb-rate-${i.id}" value="${b.overage_rate}" style="width:70px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;font-size:.78rem;"></td>
+    <td><input type="text" maxlength="11" id="msb-sender-${i.id}" value="${E(b.sender_id||'')}" placeholder="NYANSATEK" title="Set only after Hubtel/NCA approve this name" style="width:110px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;font-size:.78rem;">
+      ${masterSenderRequests[i.id]&&masterSenderRequests[i.id]!==b.sender_id?`<div style="font-size:.68rem;color:#8a5700;margin-top:2px;">Requested: <b>${E(masterSenderRequests[i.id])}</b></div>`:''}</td>
     <td><button class="btn bsm" onclick="saveMasterSmsBilling('${i.id}')">Save</button></td>
   </tr>`;
   }).join('')}</tbody></table>`;
@@ -3615,13 +3897,18 @@ function renderInstList(){
 async function saveMasterSmsBilling(institutionId){
   const allowance=parseInt(document.getElementById('msb-allow-'+institutionId).value)||0;
   const rate=parseFloat(document.getElementById('msb-rate-'+institutionId).value)||0;
+  const senderRaw=(document.getElementById('msb-sender-'+institutionId)?.value||'').trim();
+  if(senderRaw&&!/^[A-Za-z0-9 ]{3,11}$/.test(senderRaw)){alert('Sender ID must be 3–11 letters or numbers.');return;}
+  const sender=senderRaw||null;
+  const prevSender=masterSmsBillingMap[institutionId]?.sender_id||null;
+  if(sender&&sender!==prevSender&&!confirm('Only set "'+sender+'" once Hubtel/NCA have APPROVED it — unregistered sender names are blocked by the networks. (If Hubtel rejects it, texts automatically fall back to NYANSATEK.) Continue?'))return;
   L(true);
   const{error}=await sb.from('sms_billing').upsert({
-    institution_id:institutionId,monthly_allowance:allowance,overage_rate:rate
+    institution_id:institutionId,monthly_allowance:allowance,overage_rate:rate,sender_id:sender
   },{onConflict:'institution_id'});
   L(false);
   if(error){alert('Error: '+error.message);return;}
-  masterSmsBillingMap[institutionId]={institution_id:institutionId,monthly_allowance:allowance,overage_rate:rate};
+  masterSmsBillingMap[institutionId]={institution_id:institutionId,monthly_allowance:allowance,overage_rate:rate,sender_id:sender};
   alert('SMS billing updated for this institution.');
 }
 
@@ -3719,7 +4006,7 @@ async function loadSmsBilling(){
   try{
     const{data,error}=await sb.from('sms_billing').select('*').eq('institution_id',prof.institution_id).maybeSingle();
     if(error)throw error;
-    smsBilling=data?{monthly_allowance:data.monthly_allowance,overage_rate:data.overage_rate}:{...DEFAULT_SMS_BILLING};
+    smsBilling=data?{monthly_allowance:data.monthly_allowance,overage_rate:data.overage_rate,sender_id:data.sender_id||null}:{...DEFAULT_SMS_BILLING};
   }catch(e){
     console.warn('Could not load SMS billing config, using defaults:',e);
     smsBilling={...DEFAULT_SMS_BILLING};
@@ -3730,7 +4017,7 @@ async function getMonthlySmsUsage(){
   const monthStart=new Date();monthStart.setDate(1);monthStart.setHours(0,0,0,0);
   const{count,error}=await sb.from('notification_logs').select('id',{count:'exact',head:true})
     .eq('institution_id',prof.institution_id).gte('created_at',monthStart.toISOString())
-    .in('type',['gate_or_bus','bulk_sms','fee_reminder']); // excludes Pickup's internal note — no real SMS is ever sent for that
+    .in('type',['gate_or_bus','bulk_sms','fee_reminder','admission','fee_receipt']); // excludes Pickup's internal note — no real SMS is ever sent for that
   if(error)throw error;
   return count||0;
 }
