@@ -4775,7 +4775,7 @@ function buildBrandedIDCard(o){
 async function printMemberID(member){
   const qrUrl=await generateQRDataUrl(member.member_code);
   const card=buildIDCard(member,qrUrl);
-  printIF(idCardPage(`${card}${card}${card}${card}`));
+  printIF(idCardPage(card));
 }
 
 async function generateQRDataUrl(text){
@@ -4819,7 +4819,7 @@ async function printPickupID(person,studentName){
   }
   const qrUrl=await generateQRDataUrl(code);
   const card=buildPickupIDCard(person,studentName,code,qrUrl);
-  printIF(idCardPage(`${card}${card}${card}${card}`));
+  printIF(idCardPage(card));
 }
 function buildPickupIDCard(person,studentName,code,qrUrl){
   return buildBrandedIDCard({
