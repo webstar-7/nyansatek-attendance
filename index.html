@@ -225,6 +225,74 @@ footer strong{color:var(--p);}
 #camera-modal .cam-card{background:var(--p);border-radius:14px;padding:16px;max-width:420px;width:100%;border-top:4px solid var(--a);}
 #camera-video{width:100%;border-radius:8px;background:#000;display:block;}
 
+
+/* ── OVERVIEW + HOW TO USE ──────────────────────────────────── */
+#ov.on,#hv.on{padding:16px;}
+#hv.on{max-width:980px;}
+.ov-hero{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+.ov-hero h2{border:0;margin:0 0 2px;padding:0;font-size:1.15rem;}
+.ov-hero .hint{margin:0;}
+.ov-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.mg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+.mc{background:#fff;border:1px solid var(--b);border-left:4px solid var(--a);border-radius:var(--r);padding:12px;text-align:center;font:inherit;color:inherit;width:100%;}
+.mc.hl{background:#fdf6e6;border-color:var(--a);}
+.mc.warn{border-left-color:var(--d);}
+.mc.warn h3{color:var(--d);}
+.mc p{font-size:.7rem;text-transform:uppercase;color:var(--g);margin-bottom:2px;font-weight:600;letter-spacing:.2px;}
+.mc h3{font-size:1.35rem;color:var(--p);font-weight:750;}
+.mc h3.long{font-size:1.1rem;padding:3px 0;}
+.mc span{display:block;font-size:.7rem;color:var(--g);margin-top:2px;}
+.mc.kpi-link{cursor:pointer;transition:transform .12s,box-shadow .12s;}
+.mc.kpi-link:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(23,38,74,.12);}
+.mc.kpi-link:focus-visible{outline:2px solid var(--a);outline-offset:2px;}
+.ov-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}
+.chart svg{width:100%;height:auto;display:block;}
+.chart text{font:12px var(--font);fill:var(--g);}
+.chart .v{font-weight:700;fill:var(--t);}
+.ov-setup-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer;list-style:none;}
+.ov-setup-h::-webkit-details-marker{display:none;}
+.ov-setup[open] .ov-setup-h{margin-bottom:10px;}
+.btn.ghost{background:#fff;color:var(--p);border-color:var(--b);}
+.btn.ghost:hover{border-color:var(--p);opacity:1;}
+.ov-setup-h h2{border:0;margin:0;padding:0;}
+.ov-bar{height:8px;border-radius:999px;background:var(--bg);overflow:hidden;margin-bottom:12px;}
+.ov-bar i{display:block;height:100%;background:var(--s);border-radius:999px;}
+.ov-steps{list-style:none;counter-reset:st;display:grid;gap:6px;}
+.ov-steps li{counter-increment:st;display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--b);border-radius:var(--r);background:#fff;}
+.ov-steps li::before{content:counter(st);flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:.75rem;font-weight:700;background:var(--bg);color:var(--p);}
+.ov-steps li.done::before{content:"\2713";background:var(--s);color:#fff;}
+.ov-steps li.done b{color:var(--g);}
+.ov-steps li>div{flex:1;min-width:0;}
+.ov-steps b{display:block;font-size:.84rem;color:var(--p);}
+.ov-steps span{display:block;font-size:.75rem;color:var(--g);}
+.ov-steps li>div .badge{display:inline-block;margin-left:6px;}
+.gd-intro{margin-bottom:12px;}
+.gd-intro h2{border:0;padding:0;margin-bottom:4px;}
+.gd-jump{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.gd-jump a{font-size:.76rem;font-weight:600;color:var(--p);text-decoration:none;border:1px solid var(--b);border-radius:999px;padding:5px 12px;background:#fff;}
+.gd-jump a:hover{border-color:var(--a);}
+details.gd{background:#fff;border:1px solid var(--b);border-radius:var(--r);margin-bottom:8px;scroll-margin-top:12px;}
+details.gd>summary{cursor:pointer;list-style:none;padding:14px 16px;font-weight:700;font-size:.92rem;color:var(--p);display:flex;align-items:center;gap:10px;}
+details.gd>summary::-webkit-details-marker{display:none;}
+details.gd>summary::before{content:"";width:8px;height:8px;border-right:2px solid var(--a);border-bottom:2px solid var(--a);transform:rotate(-45deg);transition:transform .15s;flex:none;}
+details.gd[open]>summary::before{transform:rotate(45deg);}
+details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;border-radius:var(--r);}
+.gd-b{padding:0 16px 16px 34px;font-size:.85rem;line-height:1.55;color:var(--t);}
+.gd-b p{margin-bottom:8px;}
+.gd-steps{padding-left:18px;display:grid;gap:8px;}
+.gd-steps li{padding-left:4px;}
+.gd-steps li::marker{color:var(--a);font-weight:700;}
+.gd-steps .btn{margin-left:6px;vertical-align:middle;}
+.gd-tabs{display:grid;gap:6px;}
+.gd-tabs>div{display:grid;grid-template-columns:170px 1fr auto;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #edf0f4;}
+.gd-tabs>div:last-child{border-bottom:0;}
+.gd-tabs b{font-size:.82rem;color:var(--p);}
+.gd-tabs span{font-size:.8rem;color:var(--g);}
+.gd-help{font-size:.85rem;}
+.gd-help a{color:var(--bl);font-weight:600;}
+@media(max-width:900px){.ov-grid{grid-template-columns:1fr;}}
+@media(max-width:600px){.gd-tabs>div{grid-template-columns:1fr auto;}.gd-tabs span{grid-column:1/2;}.gd-b{padding-left:16px;}}
+
 /* ── PHONES / SMALL TABLETS: sidebar becomes a top bar, like the POS ── */
 @media(max-width:860px){
   #app:not([style*="none"]){grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;}
@@ -1060,6 +1128,12 @@ footer strong{color:var(--p);}
       </div>
     </div>
 
+    <!-- OVERVIEW (admin home) -->
+    <div id="ov" class="view"><div class="es">Loading overview…</div></div>
+
+    <!-- HOW TO USE -->
+    <div id="hv" class="view"></div>
+
   </main>
   <footer>
     <span id="fbiz">—</span> &bull; Powered by <strong>NYANSATEK</strong>
@@ -1831,6 +1905,8 @@ function swV(v){
   const b=document.getElementById('t-'+v);if(b)b.classList.add('on');
   if(v==='gv')setTimeout(()=>document.getElementById('scan-input')?.focus(),100);
   if(v==='bv')loadBillingInfo();
+  if(v==='ov')loadOverview();
+  if(v==='hv')renderGuide();
   if(v==='busv')initBusView();else stopBusCamera();
   if(v!=='gv')stopGateCamera();
 }
@@ -1840,12 +1916,12 @@ function buildNav(role){
   const tabs=role==='master'
     ?[['mv','Overview']]
     :role==='admin'
-    ?[['gv','Gate'],['busv','Bus'],['av','Admin'],['bv','Billing']]
+    ?[['ov','Overview'],['gv','Gate'],['busv','Bus'],['av','Admin'],['bv','Billing'],['hv','How to use']]
     :role==='teacher'
-    ?[['gv','Gate'],['sv','My Scores']]
+    ?[['sv','My Scores'],['gv','Gate'],['hv','How to use']]
     :role==='parent'
-    ?[['pv','My Children']]
-    :[['gv','Gate'],['busv','Bus']];
+    ?[['pv','My Children'],['hv','How to use']]
+    :[['gv','Gate'],['busv','Bus'],['hv','How to use']];
   tabs.forEach(([k,l],i)=>{
     const b=document.createElement('button');b.id='t-'+k;b.innerText=l;
     if(i===0)b.classList.add('on');b.onclick=()=>swV(k);nav.appendChild(b);
@@ -1873,7 +1949,7 @@ async function initInstitution(){
   // Each role lands in its own home view instead of always opening the
   // gate scanner: admin -> Admin panel, teacher -> My Scores, and the
   // dedicated gate-keeper role (no elevated role) -> the Gate itself.
-  const landingView=prof.role==='admin'?'av':prof.role==='teacher'?'sv':'gv';
+  const landingView=prof.role==='admin'?'ov':prof.role==='teacher'?'sv':'gv';
   swV(landingView);startClock();
   await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();await loadSmsBilling();
   await cacheOfflineEssentials();
@@ -3028,6 +3104,304 @@ async function loadNotifHistory(){
     <td style="font-weight:600;">${E(r.recipient_phone)}</td>
     <td style="font-size:.75rem;color:var(--g);">${E(r.message)}</td>
   </tr>`).join('')}</tbody></table>`;
+}
+
+// ── OVERVIEW (admin home) ─────────────────────────────────────
+// Read-only summary of the school: today's gate activity, a 7-day
+// chart, fees for the current term and a setup checklist. Every query
+// is a plain select scoped to the institution, and each one fails soft
+// (offline or error just shows a dash) so this view can never block
+// anything else in the app.
+function goAdmin(tab){swV('av');if(tab)swTab(tab);}
+function ovCount(q){return q.then(r=>r.error?null:(r.count??0)).catch(()=>null);}
+function ovNum(n){return n===null||n===undefined?'—':Number(n).toLocaleString();}
+async function loadOverview(){
+  const el=document.getElementById('ov');if(!el)return;
+  el.innerHTML='<div class="es">Loading overview…</div>';
+  const iid=prof?.institution_id;const t=td();
+  const isSchool=institution?.type==='school';
+  const wk=new Date();wk.setDate(wk.getDate()-6);const weekStart=wk.toISOString().split('T')[0];
+  const H={count:'exact',head:true};
+  const [students,teachers,staffN,parents,classesN,termsN,feeTermsN,busesN,pickupsN,enrolN,logsToday,logsWeek,activeFee]=await Promise.all([
+    ovCount(sb.from('members').select('id',H).eq('institution_id',iid).not('is_active','is',false)),
+    ovCount(sb.from('inst_profiles').select('id',H).eq('institution_id',iid).eq('role','teacher').not('is_active','is',false)),
+    ovCount(sb.from('inst_profiles').select('id',H).eq('institution_id',iid).eq('role','gate').not('is_active','is',false)),
+    ovCount(sb.from('inst_profiles').select('id',H).eq('institution_id',iid).eq('role','parent')),
+    ovCount(sb.from('school_classes').select('id',H).eq('institution_id',iid)),
+    ovCount(sb.from('academic_terms').select('id',H).eq('institution_id',iid)),
+    ovCount(sb.from('fee_terms').select('id',H).eq('institution_id',iid)),
+    ovCount(sb.from('buses').select('id',H).eq('institution_id',iid)),
+    ovCount(sb.from('authorized_pickups').select('id',H).eq('institution_id',iid)),
+    ovCount(sb.from('class_enrollments').select('id',H).eq('institution_id',iid)),
+    sb.from('attendance_logs').select('member_id,event_type,status,source,scanned_at,deny_reason,members(full_name,class_or_dept)')
+      .eq('institution_id',iid).gte('scanned_at',t+'T00:00:00').lte('scanned_at',t+'T23:59:59')
+      .order('scanned_at',{ascending:false}).limit(1000).then(r=>r.error?null:(r.data||[])).catch(()=>null),
+    sb.from('attendance_logs').select('member_id,scanned_at')
+      .eq('institution_id',iid).eq('event_type','entry').eq('status','allowed')
+      .gte('scanned_at',weekStart+'T00:00:00').lte('scanned_at',t+'T23:59:59')
+      .limit(20000).then(r=>r.error?null:(r.data||[])).catch(()=>null),
+    sb.from('fee_terms').select('id,term_name').eq('institution_id',iid).eq('is_active',true)
+      .then(r=>r.error?[]:(r.data||[])).catch(()=>[])
+  ]);
+  // fees collected in the current (active) fee term
+  let feesCollected=null,feeTermLabel='';
+  if(activeFee.length){
+    feeTermLabel=[...new Set(activeFee.map(f=>f.term_name))].join(', ');
+    try{
+      const{data,error}=await sb.from('fee_payments').select('amount_paid').eq('institution_id',iid).in('fee_term_id',activeFee.map(f=>f.id)).limit(20000);
+      if(!error)feesCollected=(data||[]).reduce((s,r)=>s+Number(r.amount_paid||0),0);
+    }catch(e){}
+  }
+  const studentsN=students??(Array.isArray(members)?members.length:null);
+  const L=logsToday||[];
+  const presentIds=new Set(L.filter(r=>r.event_type==='entry'&&r.status==='allowed').map(r=>r.member_id));
+  const outIds=new Set(L.filter(r=>r.event_type==='exit'&&r.status==='allowed').map(r=>r.member_id));
+  const deniedToday=L.filter(r=>r.status==='denied').length;
+  const present=logsToday?presentIds.size:null;
+  const notIn=(present!==null&&studentsN!==null)?Math.max(studentsN-present,0):null;
+  // 7-day chart: distinct students let in per day
+  const byDay={};(logsWeek||[]).forEach(r=>{const d=r.scanned_at.slice(0,10);(byDay[d]=byDay[d]||new Set()).add(r.member_id);});
+  const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=d.toISOString().split('T')[0];days.push({k,v:byDay[k]?byDay[k].size:0,lbl:d.toLocaleDateString(undefined,{weekday:'short'})});}
+  const hour=new Date().getHours();const greet=hour<12?'morning':hour<17?'afternoon':'evening';
+  // setup checklist — a real sequence, so it is numbered
+  const steps=[
+    {done:termsN>0,  title:'Add the current academic term',     why:'Terms organise scores, report cards and class lists.', tab:'at'},
+    {done:classesN>0,title:'Create your classes and subjects',  why:'e.g. JHS 1A, Primary 4 — then add each class’s subjects.', tab:'cl'},
+    {done:feeTermsN>0,title:'Set fee terms and the gate fee policy', why:'Fee amounts per class, and whether unpaid balances block entry.', tab:'ft'},
+    {done:studentsN>0,title:'Register your students',           why:'Name, class, photo and a guardian phone for SMS alerts.', tab:'mb'},
+    {done:enrolN>0,  title:'Enroll students into their classes',why:'Needed for the gradebook, report cards and rosters.', tab:'cl'},
+    {done:teachers>0,title:'Create teacher accounts',           why:'Then assign each teacher their class subjects.', tab:'ts'},
+    {done:staffN>0,  title:'Create staff accounts for the gate and buses', why:'Staff can scan at the gate and on any bus.', tab:'staff'},
+    {done:busesN>0,  title:'Add your buses (if you run any)',   why:'Staff pick the bus before scanning students on and off.', tab:'bus', optional:true},
+    {done:parents>0, title:'Give parents their portal accounts',why:'From a student’s profile: create and link the parent.', tab:'sp'},
+    {done:pickupsN>0,title:'Add authorized pickup persons',     why:'Photos are checked at the gate when a child is collected.', tab:'pu'},
+    {done:false,     title:'Print ID cards',                    why:'From Student Profile, Teachers and Pickups. Run ID renumbering in Reports first, once.', tab:'sp', manual:true}
+  ];
+  const doneN=steps.filter(s=>s.done).length;const total=steps.filter(s=>!s.manual).length;
+  const setupComplete=steps.filter(s=>!s.manual&&!s.optional).every(s=>s.done);
+  const recent=L.slice(0,8);
+  const maxV=Math.max(1,...days.map(d=>d.v));
+  const chart=`<svg viewBox="0 0 420 170" role="img" aria-label="Students let in through the gate, last 7 days">
+    ${days.map((d,i)=>{const h=Math.round((d.v/maxV)*110);const x=14+i*58;const y=130-h;const isT=i===6;
+      return `<rect x="${x}" y="${y}" width="40" height="${Math.max(h,2)}" rx="6" fill="${isT?'var(--a)':'var(--p)'}" opacity="${isT?1:.82}"/>
+      <text x="${x+20}" y="${y-6}" text-anchor="middle" class="v">${d.v}</text>
+      <text x="${x+20}" y="150" text-anchor="middle">${E(d.lbl)}</text>`;}).join('')}
+  </svg>`;
+  const tile=(label,val,tab,cls,sub)=>`<button class="mc kpi-link ${cls||''}" onclick="goAdmin('${tab}')"><p>${label}</p><h3${String(val).length>9?' class="long"':''}>${val}</h3>${sub?`<span>${sub}</span>`:''}</button>`;
+  el.innerHTML=`
+  <div class="ov-hero card">
+    <div><h2>Good ${greet}${prof?.display_name?', '+E(prof.display_name):''}</h2>
+    <p class="hint">${E(institution?.name||'')} &nbsp;|&nbsp; ${new Date().toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</p></div>
+    <div class="ov-actions">
+      <button class="btn ba" onclick="swV('gv')">Open gate scanner</button>
+      <button class="btn" onclick="goAdmin('mb')">Register a student</button>
+      <button class="btn" onclick="goAdmin('fp')">Record a fee payment</button>
+    </div>
+  </div>
+  <div class="mg">
+    ${tile('Students',ovNum(studentsN),'mb','hl')}
+    ${tile('In school today',ovNum(present),'ar','',present!==null&&studentsN?Math.round(present/studentsN*100)+'% of students':'')}
+    ${tile('Not in yet',ovNum(notIn),'ar','',outIds.size?ovNum(outIds.size)+' signed out':'')}
+    ${tile('Denied at gate today',ovNum(logsToday?deniedToday:null),'ar',deniedToday?'warn':'')}
+    ${tile('Fees collected',feesCollected===null?'—':'GH\u20B5'+feesCollected.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}),'fp','',feeTermLabel?E(feeTermLabel):'No active fee term')}
+    ${tile('Teachers',ovNum(teachers),'ts')}
+  </div>
+  <div class="ov-grid">
+    <div class="card"><h2>Students in school — last 7 days</h2><div class="chart">${chart}</div>
+      <p class="hint" style="margin:6px 0 0;">Counts each student once per day, from allowed gate and bus entry scans.</p></div>
+    <div class="card"><h2>Today’s scans</h2>
+      ${recent.length?`<table><thead><tr><th>Time</th><th>Student</th><th>Event</th><th>Status</th></tr></thead><tbody>${recent.map(r=>`<tr>
+        <td style="font-size:.74rem;white-space:nowrap;">${new Date(r.scanned_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+        <td><strong>${E(r.members?.full_name||'—')}</strong><br><span style="font-size:.7rem;color:var(--g);">${E(r.members?.class_or_dept||'')}</span></td>
+        <td>${r.source==='bus'?'Bus ':''}${r.event_type==='exit'?'exit':'entry'}</td>
+        <td><span class="badge ${r.status==='allowed'?'bg':'br'}">${r.status==='allowed'?'Allowed':'Denied'}</span></td></tr>`).join('')}</tbody></table>
+        <button class="btn bsm" style="margin-top:10px;" onclick="goAdmin('ar')">See full attendance report</button>`
+      :`<div class="es">No scans yet today. Open the gate scanner to start checking students in.</div>`}
+    </div>
+  </div>
+  <details class="card ov-setup"${setupComplete?'':' open'}>
+    <summary class="ov-setup-h"><h2>${setupComplete?'Setup complete':'Getting started'}</h2>
+      <span class="badge ${setupComplete?'bg':'by'}">${doneN} of ${total} done</span>
+      <button class="btn bsm" style="margin-left:auto;" onclick="event.preventDefault();swV('hv')">Open the full guide</button></summary>
+    <div class="ov-bar"><i style="width:${Math.round(doneN/total*100)}%"></i></div>
+    <ol class="ov-steps">${steps.map(s=>`<li class="${s.done?'done':''}">
+      <div><b>${E(s.title)}${s.optional?' <span class="badge" style="background:var(--bg);color:var(--g);">Optional</span>':''}</b><span>${E(s.why)}</span></div>
+      <button class="btn bsm ${s.done?'ghost':'ba'}" onclick="goAdmin('${s.tab}')">${s.done?'View':'Start'}</button></li>`).join('')}</ol>
+  </details>`;
+}
+
+// ── HOW TO USE (guide for every role) ─────────────────────────
+// Static help content. "Open" buttons only navigate to existing tabs.
+function renderGuide(){
+  const el=document.getElementById('hv');if(!el)return;
+  const role=prof?.role;
+  const open=(tab,label)=>`<button class="btn bsm" onclick="goAdmin('${tab}')">${label||'Open'}</button>`;
+  const openV=(v,label)=>`<button class="btn bsm" onclick="swV('${v}')">${label}</button>`;
+  const sec=(id,title,body,openFirst)=>`<details class="gd" id="gd-${id}"${openFirst?' open':''}><summary>${title}</summary><div class="gd-b">${body}</div></details>`;
+  const ol=items=>`<ol class="gd-steps">${items.map(i=>`<li>${i}</li>`).join('')}</ol>`;
+  const gate=sec('gate','Scanning at the gate',`
+    <p>The gate scanner records arrivals and departures and texts parents automatically.</p>
+    ${ol([
+      'Open <b>Gate</b> in the menu. Pick the mode at the top: <b>Entry</b> in the morning, <b>Exit</b> at closing, <b>Pickup</b> when a parent or guardian collects a child.',
+      'Scan the student’s ID card. A USB/Bluetooth barcode scanner types straight into the box; on a phone or tablet tap <b>Use Camera Instead</b> and point it at the QR code.',
+      'Read the result: <b>Allowed</b> (green) or <b>Denied</b> (red) with the reason, such as an outstanding fee balance. The screen clears itself after a few seconds, ready for the next student.',
+      '<b>Pickup mode:</b> scan the student’s card, compare the person collecting against the photos shown, then tap <b>Confirm Match</b> — or <b>Deny / No Match</b>.',
+      'No internet? Keep scanning. Scans are saved on the device and sync automatically when the connection returns (the yellow “pending sync” badge shows how many are waiting).'
+    ])}`, role==='gate');
+  const bus=sec('bus','Scanning on the bus',`
+    ${ol([
+      'Open <b>Bus</b> in the menu and choose the bus or route from the list.',
+      'Choose <b>Boarding</b> when students get on and <b>Drop-off</b> when they get off.',
+      'Point the camera at each student’s ID card QR code. Parents get a text if SMS alerts are on for that student.'
+    ])}<p class="hint">Buses are added by the school admin under Admin → Buses. Any staff member can scan on any bus.</p>`);
+  const teacher=sec('teacher','Entering scores (teachers)',`
+    ${ol([
+      'Open <b>My Scores</b>. You only see the classes and subjects the admin assigned to you.',
+      'Pick the term, your class and the subject, then tap <b>Load</b>.',
+      'Enter each student’s continuous assessment and exam scores and save. The admin turns these into report cards.'
+    ])}<p class="hint">Missing a class or subject? Ask the school admin to assign it under Admin → Teachers.</p>`, role==='teacher');
+  const parent=sec('parent','Using the parent portal',`
+    ${ol([
+      'Sign in with the email the school registered for you. On first sign-in you choose your own password.',
+      'Open <b>My Children</b> and pick a child if you have more than one at the school.',
+      'Use the tabs to see <b>Results</b>, <b>Fees</b> (balance and payments) and <b>Attendance</b> (arrival and departure times).'
+    ])}<p class="hint">Don’t see your child? Contact the school office so they can link your account.</p>`, role==='parent');
+  if(role!=='admin'){
+    el.innerHTML=`<div class="card gd-intro"><h2>How to use</h2><p class="hint">Short guides for the screens you have access to. Tap a heading to open it.</p></div>
+      ${role==='parent'?parent:role==='teacher'?teacher+gate:gate+bus}`;
+    return;
+  }
+  const tabs=[
+    ['Members','mb','Register students: name, class, photo and guardian phone, and choose whether parents get SMS on entry and/or exit.'],
+    ['Student Profile','sp','Look up one student: details, fees, attendance, print their ID card, and create or link parent portal accounts.'],
+    ['Fee Terms','ft','Set fee amounts per term (per class, or one default rate) and the gate fee policy that decides who is denied entry.'],
+    ['Fee Payments','fp','Record a payment (cash, MoMo, bank, cheque) and print a receipt. Balances update at the gate immediately.'],
+    ['Attendance Report','ar','See every gate and bus scan for any date range, filter allowed or denied, and print it.'],
+    ['Notifications','nl','History of SMS alerts sent to parents.'],
+    ['Acad. Terms','at','Add academic terms (e.g. Term 1, 2026/2027) and mark the current one.'],
+    ['Classes','cl','Create classes, add subjects to each class, and enroll students into classes.'],
+    ['Buses','bus','Add buses or routes that staff choose from when scanning on the bus.'],
+    ['Staff','staff','Create logins for gate and bus staff. Every scan is stamped with the staff member’s name.'],
+    ['Grading Setup','grading','Set the CA/exam weighting, assessment components and the grading scale (WAEC or letter grade + GPA).'],
+    ['Gradebook','gb','View and edit scores for any class and subject.'],
+    ['Report Cards','rc','Generate and print report cards for a class and term.'],
+    ['Reports','rp','Class ranking, alphabetical rosters, fee defaulters with SMS reminders — and the one-time ID renumbering.'],
+    ['Bulk SMS','bs','Text all parents, or one class’s parents, at once.'],
+    ['Pickups','pu','Add the people allowed to collect each student, with a photo, and print their pickup cards.'],
+    ['Teachers','ts','Create teacher logins, assign them subjects, add their photo and print staff ID cards.']
+  ];
+  el.innerHTML=`
+  <div class="card gd-intro">
+    <h2>How to use NYANSATEK School Management System</h2>
+    <p class="hint">Everything you need to set up your school and run it day to day. Tap a heading to open it; the buttons take you straight to the right screen.</p>
+    <div class="gd-jump">${['setup','tabs','student','teacher-ob','parent-ob','pickup','staff','gate','bus','fees','grades','ids','sms','daily'].map((k,i)=>`<a href="#gd-${k}" onclick="document.getElementById('gd-${k}').open=true">${['Setting up','What each screen does','Students','Teachers','Parents','Pickups','Staff','Gate','Bus','Fees','Grades & report cards','ID cards','SMS','Daily routine'][i]}</a>`).join('')}</div>
+  </div>
+  ${sec('setup','Setting up your school (do these in order)',`
+    <p>A new school takes about an hour to set up. The <b>Overview</b> screen ticks these off as you go.</p>
+    ${ol([
+      `Add the current academic term. ${open('at')}`,
+      `Create your classes, then add each class’s subjects. ${open('cl')}`,
+      `Create fee terms and save the gate fee policy. ${open('ft')}`,
+      `Set up grading: weights, assessment components and grading scale. ${open('grading')}`,
+      `Register your students. ${open('mb')}`,
+      `Enroll each student into their class. ${open('cl')}`,
+      `Create teacher accounts and assign their subjects. ${open('ts')}`,
+      `Create staff accounts for the gate and buses. ${open('staff')}`,
+      `Add buses, if you run any. ${open('bus')}`,
+      `Create parent portal accounts from each student’s profile. ${open('sp')}`,
+      `Add authorized pickup persons. ${open('pu')}`,
+      `Run the one-time ID renumbering, then print ID cards. ${open('rp','Open Reports')}`
+    ])}`,true)}
+  ${sec('tabs','What each screen does',`
+    <div class="gd-tabs">
+      <div><b>Overview</b><span>Today at a glance: who is in school, who was denied, fees collected and your setup progress.</span>${openV('ov','Open')}</div>
+      <div><b>Gate</b><span>Scan students in and out, and verify pickups.</span>${openV('gv','Open')}</div>
+      <div><b>Bus</b><span>Scan students boarding and getting off a bus.</span>${openV('busv','Open')}</div>
+      <div><b>Billing</b><span>Your NYANSATEK subscription: plan, renewal date and payment.</span>${openV('bv','Open')}</div>
+      ${tabs.map(([n,k,d])=>`<div><b>Admin → ${n}</b><span>${d}</span>${open(k)}</div>`).join('')}
+    </div>`)}
+  ${sec('student','Onboarding a student',`
+    ${ol([
+      `Go to <b>Admin → Members</b>. ${open('mb')}`,
+      'Take or upload a photo — it appears on the ID card and on the gate screen.',
+      'Enter the full name and class. Leave <b>ID Number</b> empty and one is created automatically.',
+      'Enter the guardian’s name and phone, and tick <b>Notify on Entry</b> / <b>Notify on Exit</b> for SMS alerts. Tap <b>Register Member</b>.',
+      `Enroll the student into their class under <b>Classes → Enroll Student into Class</b>. ${open('cl')}`,
+      `Print their ID card from <b>Student Profile</b>. ${open('sp')}`
+    ])}`)}
+  ${sec('teacher-ob','Onboarding a teacher',`
+    ${ol([
+      `Go to <b>Admin → Teachers</b> and fill in <b>Create New Teacher</b> (name, email, phone). ${open('ts')}`,
+      'A temporary password is shown <b>once</b> — write it down and give it to the teacher with their email. They choose their own password at first sign-in.',
+      'Under <b>Assign Subject to Teacher</b>, pick the teacher, class and subject. Repeat for each subject they teach.',
+      'Under <b>Teacher Profile</b>, add their photo, then tap <b>ID</b> to print their staff ID card.',
+      `Optionally make them class teacher when creating or editing a class. ${open('cl')}`
+    ])}`)}
+  ${sec('parent-ob','Giving a parent portal access',`
+    ${ol([
+      `Open <b>Admin → Student Profile</b> and search for the child. ${open('sp')}`,
+      'In <b>Parent / Guardian Portal Accounts</b>, either search for an existing parent (for siblings) and tap <b>Link Parent</b>, or fill in <b>Create New Parent Account</b> and tap <b>Create &amp; Link</b>.',
+      'Give the parent their email and the temporary password shown. At first sign-in they pick their own password.',
+      'The parent then sees results, fees and attendance for each linked child.'
+    ])}<p class="hint">SMS alerts use the guardian phone on the student’s record, so they work even without a portal account.</p>`)}
+  ${sec('pickup','Adding authorized pickup persons',`
+    ${ol([
+      `Go to <b>Admin → Pickups</b> and search for the student. ${open('pu')}`,
+      'Take or upload a clear photo of the person — gate staff compare against it.',
+      'Enter their name, relationship and phone, then tap <b>Save Pickup Person</b>.',
+      'In the list on the right, tap <b>ID</b> to print their pickup card.',
+      'At collection time, gate staff use <b>Pickup</b> mode on the Gate screen.'
+    ])}`)}
+  ${sec('staff','Creating staff accounts (gate and bus)',`
+    ${ol([
+      `Go to <b>Admin → Staff</b> and fill in <b>Create New Staff Account</b>. ${open('staff')}`,
+      'Note the temporary password shown once and give it to the staff member. They set their own at first sign-in.',
+      'Staff can scan at the gate and on any bus, so one person can cover for another.',
+      'When someone leaves, tap <b>Deactivate</b>. Their login stops at once, but their past scans keep their name.'
+    ])}`)}
+  ${gate}
+  ${sec('bus','Setting up and scanning on buses',`
+    ${ol([
+      `Add each bus or route under <b>Admin → Buses</b>. The driver name is only a label — create a staff login for the person who scans. ${open('bus')}`,
+      'The staff member opens <b>Bus</b>, chooses the bus, then <b>Boarding</b> or <b>Drop-off</b>.',
+      'They point the camera at each student’s ID card. Parents get a text if alerts are on.'
+    ])}`)}
+  ${sec('fees','Fees and the gate fee policy',`
+    ${ol([
+      `In <b>Admin → Fee Terms</b>, add a fee term with an amount. Leave Class as “All Classes” for a default rate, or add a separate term per class. Tick “current active term”. ${open('ft')}`,
+      'Save the <b>Gate Fee Policy</b>: the balance a student can owe before being denied, and how many days into the term before anyone is denied.',
+      `Record payments in <b>Fee Payments</b> — the student is allowed through the gate as soon as their balance clears. ${open('fp')}`,
+      `For reminders, use <b>Reports → Fee Defaulters &amp; SMS Reminder</b>. ${open('rp')}`
+    ])}`)}
+  ${sec('grades','Grades and report cards',`
+    ${ol([
+      `Set the CA and exam weights, the assessment components and the grading scale in <b>Grading Setup</b>. ${open('grading')}`,
+      'Teachers enter scores in their own <b>My Scores</b> screen. Admins can view or adjust them in <b>Gradebook</b>.',
+      `Generate and print report cards for a class and term in <b>Report Cards</b>. ${open('rc')}`,
+      `Class rankings and rosters are under <b>Reports</b>. ${open('rp')}`
+    ])}`)}
+  ${sec('ids','Printing ID cards',`
+    ${ol([
+      `<b>Before printing any cards for the first time</b>, run <b>One-Time ID Renumbering</b> in Reports so everyone gets a tidy ID. Never run it after cards are handed out — old cards would stop working. ${open('rp')}`,
+      'Students: <b>Student Profile</b> → search → <b>Print ID Card</b>.',
+      'Teachers: <b>Teachers → Teacher Profile</b> → select → <b>ID</b>.',
+      'Pickup persons: <b>Pickups</b> → select the student → <b>ID</b> beside the person.',
+      'Cards print in colour with your school’s name. Print on card stock at 100% scale and cut to size.'
+    ])}`)}
+  ${sec('sms','Text messages to parents',`
+    <p>Parents get automatic texts when their child is scanned in or out (if ticked on the student’s record) and when entry is denied.</p>
+    ${ol([
+      `To text everyone at once, use <b>Bulk SMS</b>; filter by class to reach one class. ${open('bs')}`,
+      `See everything that was sent under <b>Notifications</b>. ${open('nl')}`
+    ])}`)}
+  ${sec('daily','A typical school day',`
+    ${ol([
+      'Morning: gate staff open <b>Gate</b> in <b>Entry</b> mode; bus staff scan <b>Boarding</b> and <b>Drop-off</b>.',
+      'During the day: record fee payments as they come in; check <b>Overview</b> for who is in and who was denied.',
+      'Closing: switch the gate to <b>Exit</b>, or <b>Pickup</b> for children being collected.',
+      'End of term: teachers finish scores, then print report cards and fee defaulter lists.'
+    ])}`)}
+  <div class="card gd-help"><b>Need help?</b> Call NYANSATEK support on <a href="tel:0536340578">0536 340 578</a>.</div>`;
 }
 
 // ── ADMIN TABS ────────────────────────────────────────────────
