@@ -1,10 +1,10 @@
 {
-  "name": "NYANSATEK Attendance System",
-  "short_name": "NYANSATEK Attendance",
+  "name": "NYANSATEK School Management System",
+  "short_name": "NYANSATEK School",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#111827",
+  "background_color": "#17264a",
+  "theme_color": "#17264a",
   "icons": [
     { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
     { "src": "favicon-32x32.png", "sizes": "32x32", "type": "image/png" },
