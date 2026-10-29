@@ -3368,13 +3368,23 @@ async function saveSmsSettings(){
   await loadSmsSettings();
   alert('Message settings saved. They apply on every device from the next scan.');
 }
+// Texts NYANSATEK when a school asks for a sender name.
+const OWNER_ALERT_PHONE='0536340578';
+async function notifyOwnerSenderRequest(schoolName,sender){
+  try{
+    await sb.functions.invoke('school-send-sms',{body:{phone:OWNER_ALERT_PHONE,
+      message:`NYANSATEK School: ${schoolName} requested the SMS sender name "${sender}". Register it on Hubtel, then enter it in the master console.`}});
+  }catch(e){console.warn('Could not text the sender-name request alert:',e);}
+}
 async function requestSenderId(){
   const v=(document.getElementById('st-sender')?.value||'').trim();
   if(!/^[A-Za-z0-9 ]{3,11}$/.test(v)){alert('Use 3 to 11 letters or numbers, for example ACCRAROYAL.');return;}
+  const prev=smsSettings?.requested_sender_id||'';
   L(true);
   const{error}=await sb.from('school_sms_settings').upsert({institution_id:prof.institution_id,requested_sender_id:v,updated_at:new Date().toISOString()},{onConflict:'institution_id'});
   L(false);
   if(error){alert('Could not save your request: '+error.message);return;}
+  if(v!==prev)await notifyOwnerSenderRequest(institution?.name||'A school',v);
   await loadSettingsView();
   alert('Request saved. NYANSATEK will register "'+v+'" with the networks. Your texts keep coming from the current sender until it is approved.');
 }
