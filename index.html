@@ -294,6 +294,18 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
 @media(max-width:600px){.gd-tabs>div{grid-template-columns:1fr auto;}.gd-tabs span{grid-column:1/2;}.gd-b{padding-left:16px;}}
 
 
+/* LOGO */
+.brand{position:relative;}
+.brand.has-logo{background-image:none!important;}
+.brand img.brand-logo{position:absolute;left:4px;top:2px;width:38px;height:38px;object-fit:contain;background:#fff;border-radius:10px;padding:3px;}
+#gate-logo{float:left;width:44px;height:44px;object-fit:contain;background:#fff;border-radius:10px;padding:3px;margin-right:12px;}
+.logo-card{max-width:760px;margin-bottom:14px;}
+.logo-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;}
+.logo-box{width:112px;height:112px;border:1px dashed var(--in-b);border-radius:var(--r);display:flex;align-items:center;justify-content:center;background:#fff;flex:none;}
+.logo-box img{max-width:100%;max-height:100%;object-fit:contain;padding:6px;}
+.logo-box span{font-size:.75rem;color:var(--g);}
+.logo-txt{flex:1;min-width:220px;}
+@media(max-width:860px){.brand img.brand-logo{width:34px;height:34px;top:0;left:2px;}}
 /* SETTINGS */
 #stv.on{padding:16px;}
 .st-card{max-width:760px;margin-bottom:14px;}
@@ -1998,7 +2010,7 @@ async function initInstitution(){
   // dedicated gate-keeper role (no elevated role) -> the Gate itself.
   const landingView=prof.role==='admin'?'ov':prof.role==='teacher'?'sv':'gv';
   swV(landingView);startClock();
-  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();await loadSmsBilling();await loadSmsSettings();
+  await loadMembers();await loadFeeTerms();await loadAcademicTerms();await loadClasses();await loadBuses();await loadGradingConfig();await loadFeePolicy();await loadSmsBilling();await loadSmsSettings();await loadBranding();
   await cacheOfflineEssentials();
   setDef('ar-s','ar-e','ft-start','ft-end','at-start','at-end');
   document.getElementById('scan-input').focus();
@@ -3088,7 +3100,7 @@ function buildReceiptHtml(p,totalPaid,termAmt,balance){
   const row=(k,v)=>`<div class="r"><span>${k}</span><b>${v}</b></div>`;
   const copy=(label,top)=>`<section class="half${top?' top':''}">
     <header style="background:${th.c1};">
-      <div class="mono" style="background:${th.ac};color:${th.c1};">${E(idCardInitials(institution?.name||''))}</div>
+      ${safeLogo()?`<img class="mono" src="${safeLogo()}" alt="" style="width:19mm;height:19mm;background:#fff;object-fit:contain;padding:1mm;border-radius:2.5mm;">`:`<div class="mono" style="background:${th.ac};color:${th.c1};">${E(idCardInitials(institution?.name||''))}</div>`}
       <div class="sch"><h1>${school}</h1>${contact?`<p>${contact}</p>`:''}</div>
       <div class="ttl"><b>Fee Payment Receipt</b><span style="background:${th.ac};color:${th.c1};">${label}</span></div>
     </header>
@@ -3123,7 +3135,7 @@ function buildReceiptHtml(p,totalPaid,termAmt,balance){
     .top{border-bottom:.4mm dashed #9aa3b2;position:relative;overflow:visible;}
     .top::after{content:"\\2702  Cut here";position:absolute;left:50%;bottom:-2.4mm;transform:translateX(-50%);background:#fff;padding:0 3mm;font-size:7.5pt;color:#7b8597;letter-spacing:.3px;}
     header{display:flex;align-items:center;gap:4mm;padding:3.5mm 4.5mm;border-radius:2.5mm;color:#fff;}
-    .mono{width:12mm;height:12mm;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:9pt;}
+    .mono{width:13mm;height:13mm;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:9pt;}
     .sch{flex:1;min-width:0;}
     .sch h1{margin:0;font-size:14pt;line-height:1.15;text-transform:uppercase;letter-spacing:.2px;}
     .sch p{margin:1mm 0 0;font-size:7.5pt;opacity:.9;}
@@ -3209,6 +3221,112 @@ async function loadNotifHistory(){
     <td style="font-weight:600;">${E(r.recipient_phone)}</td>
     <td style="font-size:.75rem;color:var(--g);">${E(r.message)}</td>
   </tr>`).join('')}</tbody></table>`;
+}
+
+// ── LOGO (uploaded by the admin in Settings) ──────────────────
+// Stored as a small square image data URL in school_branding (same approach as
+// photos), cached on the device so it still prints offline.
+let brandLogo=null;
+const LOGO_RE=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+function safeLogo(){return (typeof brandLogo==='string'&&LOGO_RE.test(brandLogo))?brandLogo:null;}
+function logoCacheKey(){return 'nyansatek_logo_'+(prof?.institution_id||'');}
+async function loadBranding(){
+  try{
+    const{data,error}=await sb.from('school_branding').select('logo_data').eq('institution_id',prof?.institution_id).maybeSingle();
+    if(error)throw error;
+    brandLogo=data?.logo_data||null;
+    try{brandLogo?localStorage.setItem(logoCacheKey(),brandLogo):localStorage.removeItem(logoCacheKey());}catch(e){}
+  }catch(e){
+    try{brandLogo=localStorage.getItem(logoCacheKey())||null;}catch(_){brandLogo=null;}
+  }
+  applyBrandLogo();
+}
+// Resize any uploaded picture onto a square canvas (logo centred, transparent
+// padding) so every printout can place it without distortion.
+function processLogoFile(file){
+  return new Promise((resolve,reject)=>{
+    if(!file||!/^image\//.test(file.type)){reject(new Error('Please choose a picture file (PNG or JPG).'));return;}
+    if(file.size>8*1024*1024){reject(new Error('That picture is too large (over 8 MB). Please choose a smaller one.'));return;}
+    const rd=new FileReader();
+    rd.onerror=()=>reject(new Error('Could not read that file.'));
+    rd.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('That file is not a picture this browser can open.'));
+      img.onload=()=>{
+        const make=(size,type,q)=>{
+          const c=document.createElement('canvas');c.width=c.height=size;const x=c.getContext('2d');
+          if(type==='image/jpeg'){x.fillStyle='#fff';x.fillRect(0,0,size,size);}
+          const s=Math.min(size/img.width,size/img.height);const w=img.width*s,h=img.height*s;
+          x.imageSmoothingQuality='high';x.drawImage(img,(size-w)/2,(size-h)/2,w,h);
+          return c.toDataURL(type,q);
+        };
+        let out=make(360,'image/png');
+        if(out.length>350000)out=make(360,'image/jpeg',0.9);
+        if(out.length>350000)out=make(280,'image/jpeg',0.82);
+        resolve(out);
+      };
+      img.src=rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+async function uploadLogo(input){
+  const file=input?.files?.[0];if(!file)return;
+  let dataUrl;
+  try{dataUrl=await processLogoFile(file);}catch(e){alert(e.message);input.value='';return;}
+  L(true);
+  const{error}=await sb.from('school_branding').upsert({institution_id:prof?.institution_id,logo_data:dataUrl,updated_at:new Date().toISOString()},{onConflict:'institution_id'});
+  L(false);input.value='';
+  if(error){alert('Could not save the logo: '+error.message);return;}
+  brandLogo=dataUrl;try{localStorage.setItem(logoCacheKey(),dataUrl);}catch(e){}
+  applyBrandLogo();await loadSettingsView();
+  alert('Logo saved. It now appears on fee receipts, ID cards, report cards, PDF reports, the sidebar and the gate screen.');
+}
+async function removeLogo(){
+  if(!confirm('Remove the logo? Printouts will go back to showing your initials.'))return;
+  L(true);
+  const{error}=await sb.from('school_branding').upsert({institution_id:prof?.institution_id,logo_data:null,updated_at:new Date().toISOString()},{onConflict:'institution_id'});
+  L(false);
+  if(error){alert('Could not remove the logo: '+error.message);return;}
+  brandLogo=null;try{localStorage.removeItem(logoCacheKey());}catch(e){}
+  applyBrandLogo();await loadSettingsView();
+}
+function logoCardHtml(){
+  const lg=safeLogo();
+  return `<div class="card logo-card">
+    <h2>School logo</h2>
+    <div class="logo-row">
+      <div class="logo-box">${lg?`<img src="${lg}" alt="School logo">`:'<span>No logo yet</span>'}</div>
+      <div class="logo-txt">
+        <p class="hint">Your logo appears on fee receipts, ID cards, report cards, PDF reports, the sidebar and the gate screen. A square logo on a white or clear background looks best; PNG or JPG.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <label class="btn ba" style="cursor:pointer;">${lg?'Change logo':'Upload logo'}<input type="file" accept="image/png,image/jpeg,image/webp" style="display:none;" onchange="uploadLogo(this)"></label>
+          ${lg?'<button class="btn" style="background:#fff;color:var(--d);border:1px solid var(--d);" onclick="removeLogo()">Remove logo</button>':''}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function applyBrandLogo(){
+  const lg=safeLogo();
+  const b=document.querySelector('header .brand');
+  if(b){
+    let im=b.querySelector('img.brand-logo');
+    if(lg){if(!im){im=document.createElement('img');im.className='brand-logo';im.alt='';b.prepend(im);}im.src=lg;b.classList.add('has-logo');}
+    else{if(im)im.remove();b.classList.remove('has-logo');}
+  }
+  const g=document.getElementById('gate-inst-name');
+  if(g){
+    let gi=document.getElementById('gate-logo');
+    if(lg){if(!gi){gi=document.createElement('img');gi.id='gate-logo';gi.alt='';g.parentNode.insertBefore(gi,g);}gi.src=lg;}
+    else if(gi)gi.remove();
+  }
+}
+// Adds the logo to the top-right corner of a jsPDF report.
+function pdfLogo(doc){
+  const lg=safeLogo();if(!lg)return;
+  try{doc.addImage(lg,/^data:image\/png/.test(lg)?'PNG':'JPEG',182,6,16,16,'school-logo','FAST');}catch(e){console.warn('Logo could not be added to PDF:',e);}
 }
 
 // ── MESSAGE SETTINGS (per school) ─────────────────────────────
@@ -3328,7 +3446,7 @@ async function loadSettingsView(){
   const sw=(key,title,desc)=>`<label class="st-row"><span><b>${title}</b><small>${desc}</small></span>
     <input type="checkbox" class="st-sw" id="st-${key}" ${s[key]?'checked':''}></label>`;
   const pct=used!==null&&allowance?Math.min(100,Math.round(used/allowance*100)):0;
-  el.innerHTML=`
+  el.innerHTML=`${logoCardHtml()}
   <div class="card st-card">
     <h2>Text messages to parents</h2>
     <p class="hint">Choose which automatic texts your school sends. Every text counts towards your monthly SMS allowance, so turning off the ones you don’t need keeps costs down.</p>
@@ -3582,6 +3700,7 @@ function renderGuide(){
   ${sec('setup','Setting up your school (do these in order)',`
     <p>A new school takes about an hour to set up. The <b>Overview</b> screen ticks these off as you go.</p>
     ${ol([
+      `Upload your school logo in Settings — it appears on receipts, ID cards and report cards. ${openV('stv','Open Settings')}`,
       `Add the current academic term. ${open('at')}`,
       `Create your classes, then add each class’s subjects. ${open('cl')}`,
       `Create fee terms and save the gate fee policy. ${open('ft')}`,
@@ -3601,7 +3720,7 @@ function renderGuide(){
       <div><b>Gate</b><span>Scan students in and out, and verify pickups.</span>${openV('gv','Open')}</div>
       <div><b>Bus</b><span>Scan students boarding and getting off a bus.</span>${openV('busv','Open')}</div>
       <div><b>Billing</b><span>Your NYANSATEK subscription: plan, renewal date and payment.</span>${openV('bv','Open')}</div>
-      <div><b>Settings</b><span>Choose which texts parents receive (to control SMS cost) and request your school’s own sender name.</span>${openV('stv','Open')}</div>
+      <div><b>Settings</b><span>Upload your school logo (used on receipts, ID cards, report cards and reports), choose which texts parents receive, and request your school’s own sender name.</span>${openV('stv','Open')}</div>
       ${tabs.map(([n,k,d])=>`<div><b>Admin → ${n}</b><span>${d}</span>${open(k)}</div>`).join('')}
     </div>`)}
   ${sec('student','Onboarding a student',`
@@ -4789,7 +4908,7 @@ function downloadRankingPDF(){
   if(!rpRankData.length)return;
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF();
-  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);
+  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);pdfLogo(doc);
   doc.setFontSize(11);doc.text('Class Performance Ranking',14,24);
   doc.setFontSize(9);doc.setTextColor(120);
   doc.text((rpRankCls?.class_name||'')+' · '+(rpRankTerm?.term_name||'')+' · Generated '+new Date().toLocaleDateString(),14,30);
@@ -4842,7 +4961,7 @@ function downloadRosterPDF(){
   if(!rpRosterList.length)return;
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF();
-  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);
+  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);pdfLogo(doc);
   doc.setFontSize(11);doc.text(rpRosterTitle,14,24);
   doc.setFontSize(9);doc.setTextColor(120);doc.text('Generated '+new Date().toLocaleDateString(),14,30);
   doc.autoTable({startY:36,
@@ -4905,7 +5024,7 @@ function downloadFeeDefaultersPDF(){
   if(!sel.length){alert('No students selected.');return;}
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF();
-  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);
+  doc.setFontSize(14);doc.text(institution?.name||'School',14,16);pdfLogo(doc);
   doc.setFontSize(11);doc.text('Fee Defaulters — '+(rpFeeTerm?.term_name||''),14,24);
   doc.setFontSize(9);doc.setTextColor(120);doc.text('Generated '+new Date().toLocaleDateString(),14,30);
   doc.autoTable({startY:36,
@@ -4955,6 +5074,7 @@ function buildRCHtml(student,scores,cls,term,totalStudents,inner,daysPresent){
   }).join('');
   const body=`<div style="font-family:Arial,sans-serif;font-size:10pt;color:#000;">
   <div style="text-align:center;border-bottom:3px double #111;padding-bottom:10px;margin-bottom:14px;">
+    ${safeLogo()?`<img src="${safeLogo()}" alt="" style="width:22mm;height:22mm;object-fit:contain;display:block;margin:0 auto 6px;">`:''}
     <div style="font-size:18pt;font-weight:bold;text-transform:uppercase;letter-spacing:1px;">${school}</div>
     <div style="font-size:10pt;font-weight:bold;letter-spacing:3px;margin-top:4px;">ACADEMIC REPORT CARD</div>
     <div style="font-size:9pt;color:#555;margin-top:2px;">${E(term?.term_name||'—')} &bull; ${E(term?.academic_year||'—')}</div>
@@ -5381,7 +5501,7 @@ function buildBrandedIDCard(o){
     :`<div style="width:19mm;height:19mm;display:flex;align-items:center;justify-content:center;font-size:6pt;color:#9ca3af;border:.3mm dashed #cfd5e1;border-radius:1.2mm;">No QR</div>`;
   return `<div class="idc">
     <div class="idc-top" style="background:linear-gradient(120deg,${th.c1} 0%,${th.c2} 100%);">
-      <div class="idc-mono" style="background:${th.ac};color:${th.c1};">${E(ini)}</div>
+      ${safeLogo()?`<img class="idc-mono" src="${safeLogo()}" alt="" style="width:11.5mm;height:11.5mm;background:#fff;object-fit:contain;padding:.5mm;border-radius:1.8mm;border-color:#fff;">`:`<div class="idc-mono" style="background:${th.ac};color:${th.c1};">${E(ini)}</div>`}
       <div class="idc-school">
         <div class="idc-sname" style="font-size:${sSize};">${school}</div>
         ${meta?`<div class="idc-smeta">${meta}</div>`:''}
@@ -5389,7 +5509,7 @@ function buildBrandedIDCard(o){
     </div>
     <div class="idc-band" style="background:${th.ac};"></div>
     <div class="idc-body">
-      <div class="idc-wm" style="color:${th.c1};">${E(ini)}</div>
+      ${safeLogo()?`<img class="idc-wm" src="${safeLogo()}" alt="" style="width:26mm;height:26mm;object-fit:contain;right:22mm;bottom:2mm;opacity:.07;">`:`<div class="idc-wm" style="color:${th.c1};">${E(ini)}</div>`}
       ${photo}
       <div class="idc-info">
         <div class="idc-type" style="background:${th.c1};">${E(o.type)}</div>
