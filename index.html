@@ -294,6 +294,15 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
 @media(max-width:600px){.gd-tabs>div{grid-template-columns:1fr auto;}.gd-tabs span{grid-column:1/2;}.gd-b{padding-left:16px;}}
 
 
+/* UPDATE PHOTO */
+#pe-modal{position:fixed;inset:0;z-index:290;background:rgba(14,22,38,.55);display:none;align-items:center;justify-content:center;padding:20px;}
+#pe-modal .pe-card{background:#fff;border-radius:14px;padding:22px;width:360px;max-width:100%;border-top:4px solid var(--a);box-shadow:0 24px 70px rgba(10,18,32,.35);}
+#pe-modal h3{font-size:1.02rem;color:var(--p);margin-bottom:2px;}
+.pe-box{width:150px;height:170px;margin:0 auto;border:1px dashed var(--in-b);border-radius:12px;background:#f7f9fd;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.pe-box img{width:100%;height:100%;object-fit:cover;}
+.pe-box span{font-size:.78rem;color:var(--g);}
+.thumb-btn{background:none;border:0;padding:0;cursor:pointer;border-radius:50%;}
+.thumb-btn:focus-visible{outline:2px solid var(--a);outline-offset:2px;}
 /* LOGO */
 .brand{position:relative;}
 .brand.has-logo{background-image:none!important;}
@@ -2597,13 +2606,13 @@ function renderMemberList(list){
   if(!list.length){c.innerHTML='<div class="es">No members registered yet.</div>';return;}
   c.innerHTML=`<table><thead><tr><th>Photo</th><th>Name</th><th>Code</th><th>Class/Dept</th><th>Guardian</th><th>Status</th><th></th></tr></thead>
   <tbody>${list.map(m=>`<tr>
-    <td>${m.photo_url?`<img src="${m.photo_url}" class="thumb" alt="">`:'<span style="font-size:1.2rem;">👤</span>'}</td>
+    <td><button type="button" class="thumb-btn" title="${m.photo_url?'Change photo':'Add photo'}" onclick="openPhotoEditor('member','${m.id}')">${m.photo_url?`<img src="${m.photo_url}" class="thumb" alt="">`:'<span style="font-size:1.2rem;">👤</span>'}</button></td>
     <td><strong>${E(m.full_name)}</strong></td>
     <td style="font-family:monospace;font-size:.75rem;">${E(m.member_code)}</td>
     <td>${E(m.class_or_dept||'—')}</td>
     <td>${E(m.guardian_phone||'—')}</td>
     <td><span class="badge ${m.is_active?'bg':'br'}">${m.is_active?'Active':'Inactive'}</span></td>
-    <td><button class="btn bsm ba" onclick='printMemberID(${JSON.stringify(m)})'>&#127760; ID</button></td>
+    <td style="white-space:nowrap;"><button class="btn bsm" onclick="openPhotoEditor('member','${m.id}')">&#128247; Photo</button> <button class="btn bsm ba" onclick='printMemberID(${JSON.stringify(m)})'>&#127760; ID</button></td>
   </tr>`).join('')}</tbody></table>`;
 }
 
@@ -2764,7 +2773,8 @@ async function loadStudentProfile(memberId){
     :`<div style="width:96px;height:96px;border-radius:10px;background:var(--bg);border:2px solid var(--b);display:flex;align-items:center;justify-content:center;font-size:2rem;">&#128100;</div>`;
   c.innerHTML=`<div class="card" style="max-width:640px;margin-top:6px;">
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
-      ${photoHtml}
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">${photoHtml}
+        <button class="btn bsm" onclick="openPhotoEditor('member','${m.id}')">&#128247; ${m.photo_url?'Change photo':'Add photo'}</button></div>
       <div style="flex:1;min-width:200px;">
         <div style="font-size:1.05rem;font-weight:700;color:var(--p);">${E(m.full_name)}</div>
         <div style="font-size:.78rem;color:var(--g);font-family:monospace;">${E(m.member_code)}</div>
@@ -3786,7 +3796,8 @@ function renderGuide(){
       'Enter the first guardian’s name and phone, and the second guardian’s (for example mother and father) if you have them. Tick <b>Notify on Entry</b> / <b>Notify on Exit</b> for gate alerts. Tap <b>Register Member</b> — both guardians get an admission text with the student’s ID number.',
       `Need to add or change a guardian later? Use <b>Guardian contacts</b> on the student’s profile. ${open('sp')}`,
       `Enroll the student into their class under <b>Classes → Enroll Student into Class</b>. ${open('cl')}`,
-      `Print their ID card from <b>Student Profile</b>. ${open('sp')}`
+      `Print their ID card from <b>Student Profile</b>. ${open('sp')}`,
+      'No photo yet, or it needs replacing? Tap <b>📷 Photo</b> beside the student in the Members list, or <b>Change photo</b> on their profile — then reprint the ID card.'
     ])}`)}
   ${sec('teacher-ob','Onboarding a teacher',`
     ${ol([
@@ -3808,7 +3819,7 @@ function renderGuide(){
       `Go to <b>Admin → Pickups</b> and search for the student. ${open('pu')}`,
       'Take or upload a clear photo of the person — gate staff compare against it.',
       'Enter their name, relationship and phone, then tap <b>Save Pickup Person</b>.',
-      'In the list on the right, tap <b>ID</b> to print their pickup card.',
+      'In the list on the right, tap <b>ID</b> to print their pickup card, or <b>📷 Photo</b> to add or replace their photo later.',
       'At collection time, gate staff use <b>Pickup</b> mode on the Gate screen.'
     ])}`)}
   ${sec('staff','Creating staff accounts (gate and bus)',`
@@ -5351,6 +5362,7 @@ function capturePhoto(){
   if(target==='mb'){mbPhoto=dataUrl;setPhotoPreview('mb',dataUrl);}
   else if(target==='pu'){pickupPhoto=dataUrl;setPhotoPreview('pu',dataUrl);}
   else if(target==='tp'){tpPhoto=dataUrl;setPhotoPreview('tp',dataUrl);}
+  else if(target==='pe'){peSetPhoto(dataUrl);}
   closeCamera();
 }
 
@@ -5369,6 +5381,81 @@ document.getElementById('pu-photo-file').addEventListener('change',async e=>{
   pickupPhoto=await compressImage(file);
   setPhotoPreview('pu',pickupPhoto);
 });
+
+// ── UPDATE PHOTO (students and authorized pickup persons) ─────
+// One shared dialog to add, replace or remove the photo of someone who is
+// already registered. Uses the same camera + compression as registration.
+let photoEdit=null,lastPickupList=[];
+function ensurePhotoEditor(){
+  if(document.getElementById('pe-modal'))return;
+  const m=document.createElement('div');m.id='pe-modal';
+  m.innerHTML=`<div class="pe-card" role="dialog" aria-modal="true" aria-labelledby="pe-title">
+    <h3 id="pe-title">Update photo</h3>
+    <p class="hint" id="pe-who" style="margin-bottom:12px;"></p>
+    <div class="pe-box"><img id="pe-img" alt=""><span id="pe-empty">No photo yet</span></div>
+    <div class="photo-btn-row" style="margin-top:12px;">
+      <button type="button" class="btn bsm" onclick="openCamera('pe')">&#128247; Take Photo</button>
+      <button type="button" class="btn bsm" onclick="document.getElementById('pe-file').click()">&#128193; Upload Photo</button>
+    </div>
+    <input type="file" id="pe-file" accept="image/*" style="display:none;">
+    <button type="button" id="pe-remove" class="btn bsm" style="width:100%;margin-top:6px;background:#fff;color:var(--d);border:1px solid var(--d);" onclick="peSetPhoto(null)">Remove photo</button>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button type="button" class="btn ba bf" onclick="savePhotoEdit()">Save photo</button>
+      <button type="button" class="btn bf" style="background:#6b7280;border-color:#6b7280;" onclick="closePhotoEditor()">Cancel</button>
+    </div>
+  </div>`;
+  m.addEventListener('click',e=>{if(e.target===m)closePhotoEditor();});
+  document.body.appendChild(m);
+  document.getElementById('pe-file').addEventListener('change',async e=>{
+    const f=e.target.files[0];if(!f)return;
+    try{peSetPhoto(await compressImage(f));}catch(err){alert('Could not use that picture: '+err.message);}
+    e.target.value='';
+  });
+}
+function peRender(){
+  const img=document.getElementById('pe-img'),empty=document.getElementById('pe-empty'),rm=document.getElementById('pe-remove');
+  const ph=photoEdit?.next;
+  if(ph){img.src=ph;img.style.display='block';empty.style.display='none';}else{img.removeAttribute('src');img.style.display='none';empty.style.display='block';}
+  rm.style.display=ph?'block':'none';
+}
+function peSetPhoto(dataUrl){if(!photoEdit)return;photoEdit.next=dataUrl||null;peRender();}
+function openPhotoEditor(kind,id){
+  let rec=null,label='';
+  if(kind==='member'){rec=members.find(m=>m.id===id);label=rec?`${rec.full_name}${rec.member_code?' · '+rec.member_code:''}`:'';}
+  else if(kind==='pickup'){rec=lastPickupList.find(p=>p.id===id);label=rec?`${rec.full_name} — authorized pickup (${rec.relationship||'—'})`:'';}
+  if(!rec){alert('Could not find that person. Refresh the list and try again.');return;}
+  if(kind==='member'&&isLocalId(rec.id)){alert('This student is still waiting to sync. Add the photo once you are back online and the student has synced.');return;}
+  ensurePhotoEditor();
+  photoEdit={kind,id,current:rec.photo_url||null,next:rec.photo_url||null};
+  document.getElementById('pe-who').innerText=label;
+  document.getElementById('pe-title').innerText=rec.photo_url?'Change photo':'Add photo';
+  peRender();
+  document.getElementById('pe-modal').style.display='flex';
+}
+function closePhotoEditor(){const m=document.getElementById('pe-modal');if(m)m.style.display='none';photoEdit=null;}
+async function savePhotoEdit(){
+  if(!photoEdit)return;
+  const{kind,id,current,next}=photoEdit;
+  if(next===current){closePhotoEditor();return;}
+  if(!navigator.onLine){alert("You're offline. Photos can only be saved with an internet connection — please try again once you're back online.");return;}
+  const table=kind==='member'?'members':'authorized_pickups';
+  L(true);
+  const{error}=await sb.from(table).update({photo_url:next}).eq('id',id).eq('institution_id',prof.institution_id);
+  L(false);
+  if(error){alert('Could not save the photo: '+error.message);return;}
+  if(kind==='member'){
+    const m=members.find(x=>x.id===id);if(m)m.photo_url=next;
+    try{cacheRowsOffline('membersCache',prof.institution_id,members);}catch(e){}
+    const q=document.getElementById('mb-filter')?.value||'';
+    if(typeof filterMembers==='function')filterMembers(q);else renderMemberList(members);
+    if(spCurrentMemberId===id)loadStudentProfile(id);
+  }else{
+    const p=lastPickupList.find(x=>x.id===id);if(p)p.photo_url=next;
+    if(currentPickupMemberId)await loadPickupList(currentPickupMemberId);
+  }
+  closePhotoEditor();
+  alert(next?'Photo saved. Reprint the ID card to show the new photo.':'Photo removed.');
+}
 
 // ── PICKUP MODE ───────────────────────────────────────────────
 async function handlePickupMode(member){
@@ -5686,8 +5773,9 @@ async function loadPickupList(memberId){
     .eq('member_id',memberId).eq('is_active',true).order('full_name');
   const c=document.getElementById('pulist');
   if(!data||!data.length){
-    c.innerHTML='<div class="es">No authorized pickup persons yet for this student.</div>';return;
+    lastPickupList=[];c.innerHTML='<div class="es">No authorized pickup persons yet for this student.</div>';return;
   }
+  lastPickupList=data;
   const studentName=document.getElementById('pu-msch')?.value||document.getElementById('pu-msel')?.innerText.replace('Student: ','')||'';
   c.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:8px;">
   ${data.map(p=>`<div style="border:1px solid var(--b);border-radius:7px;padding:10px;text-align:center;">
@@ -5698,7 +5786,10 @@ async function loadPickupList(memberId){
     <div style="font-size:.72rem;color:var(--g);">${E(p.relationship)}</div>
     ${p.pickup_code?`<div style="font-size:.68rem;font-family:monospace;color:var(--g);">${E(p.pickup_code)}</div>`:''}
     ${p.phone?`<div style="font-size:.72rem;">${E(p.phone)}</div>`:''}
-    <button class="btn bsm" style="margin-top:6px;border-color:#7c3aed;color:#7c3aed;" onclick='printPickupID(${JSON.stringify(p)},${JSON.stringify(studentName)})'>&#127760; ID</button>
+    <div style="display:flex;gap:4px;justify-content:center;margin-top:6px;flex-wrap:wrap;">
+      <button class="btn bsm" onclick="openPhotoEditor('pickup','${p.id}')">&#128247; Photo</button>
+      <button class="btn bsm" style="border-color:#7c3aed;color:#7c3aed;" onclick='printPickupID(${JSON.stringify(p)},${JSON.stringify(studentName)})'>&#127760; ID</button>
+    </div>
   </div>`).join('')}</div>`;
 }
 
