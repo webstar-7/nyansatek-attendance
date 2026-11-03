@@ -357,6 +357,9 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
   .gate-time{font-size:1.4rem;}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+/* NYANSATEK credit: logo + "by NYANSATEK" after the product name */
+.nt-by{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;letter-spacing:.02em;line-height:1.2;white-space:nowrap;opacity:.92;vertical-align:middle}.nt-by .nt-logo{width:18px;height:18px;flex:none;display:block}.nt-by b{font-weight:800;letter-spacing:.06em}.nt-by.nt-lg{font-size:13.5px;gap:7px}.nt-by.nt-lg .nt-logo{width:22px;height:22px}
+.ac h1 .nt-logo{width:34px;height:34px;display:block;margin:0 auto 10px}.brand .nt-by{margin-left:8px;color:inherit}@media(max-width:700px){.brand .nt-by>span{display:none}}
 </style>
   <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -368,7 +371,7 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
 <!-- AUTH -->
 <div class="as" id="ls">
   <div class="ac">
-    <h1>NYANSATEK School Management System</h1>
+    <h1><svg class="nt-logo" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><g fill="none" stroke="#D9A833" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round"><path d="M32 32C32 21 24 15 18 20C12 25 15 34 24 34C29 34 32 31 32 32C32 40 40 47 46 43"/><path d="M32 32C32 21 40 15 46 20C52 25 49 34 40 34C36.4 34 33.6 32.6 32.4 30.8M30.2 33.6C27 39 20 45 18 43"/></g></svg>School Management System <span style="white-space:nowrap">by NYANSATEK</span></h1>
     <p class="sub">Sign in to your institution</p>
     <div class="aerr" id="le"></div>
     <form id="lf">
@@ -428,7 +431,7 @@ details.gd>summary:focus-visible{outline:2px solid var(--a);outline-offset:-2px;
 
 <div id="app" style="display:none;flex-direction:column;min-height:100vh;">
   <header>
-    <div class="brand"><span id="hbiz">—</span><em>| School Management System</em></div>
+    <div class="brand"><span id="hbiz">—</span><em>| School Management System</em><span class="nt-by"><svg class="nt-logo" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><g fill="none" stroke="#D9A833" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round"><path d="M32 32C32 21 24 15 18 20C12 25 15 34 24 34C29 34 32 31 32 32C32 40 40 47 46 43"/><path d="M32 32C32 21 40 15 46 20C52 25 49 34 40 34C36.4 34 33.6 32.6 32.4 30.8M30.2 33.6C27 39 20 45 18 43"/></g></svg><span>by <b>NYANSATEK</b></span></span></div>
     <div class="hr">
       <div class="offline-badge" id="offline-badge">&#9888; OFFLINE</div>
       <div class="sync-badge" id="sync-badge" onclick="manualSync()" title="Click to sync now">0 pending sync</div>
