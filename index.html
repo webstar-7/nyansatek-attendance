@@ -3010,7 +3010,7 @@ async function createParentAccount(){
       role:'parent',full_name:name,email,phone:phone||null,
       student_links:[{member_id:spCurrentMemberId,relationship:rel||null,is_primary:primary}]
     }});
-    if(error||data?.error){throw new Error(data?.error||error.message||'Could not create parent account.');}
+    if(error||data?.error){throw new Error(await fnErrorText(error,data,'Could not create parent account.'));}
     res.innerHTML=`<div style="padding:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
       <strong>${E(name)}</strong> can log in with:<br>
       Email: <strong>${E(email)}</strong><br>
@@ -5944,6 +5944,15 @@ async function saveAuthorizedPickup(){
   alert('Authorized pickup person saved!'+(pickupCode?' ID Number: '+pickupCode:''));
 }
 
+// Turn a server-function failure into a message people can act on.
+async function fnErrorText(error,data,fallback){
+  let msg=data&&data.error;
+  if(!msg&&error&&error.context&&typeof error.context.json==='function'){try{const j=await error.context.json();msg=j&&(j.error||j.message);}catch(e){}}
+  if(!msg)msg=(error&&error.message&&!/non-2xx/i.test(error.message))?error.message:fallback;
+  if(/already.*(registered|exists)/i.test(msg))return 'An account with this email already exists. It may be used for another NYANSATEK app, such as Resources or PeopleDesk. Please use a different email address for this account.';
+  return msg;
+}
+
 // ── CREATE TEACHER ACCOUNT ─────────────────────────────────────
 async function createTeacherAccount(){
   const name=document.getElementById('nt-name').value.trim();
@@ -5958,7 +5967,7 @@ async function createTeacherAccount(){
     const{data,error}=await sb.functions.invoke('admin-create-account',{body:{
       role:'teacher',full_name:name,email,phone:phone||null,gender:gender||null,date_of_birth:dob||null
     }});
-    if(error||data?.error){throw new Error(data?.error||error.message||'Could not create teacher.');}
+    if(error||data?.error){throw new Error(await fnErrorText(error,data,'Could not create teacher.'));}
     let staffCode='';
     try{
       const{data:np}=await sb.from('inst_profiles').select('id')
@@ -6000,7 +6009,7 @@ async function createStaffAccount(){
     const{data,error}=await sb.functions.invoke('admin-create-account',{body:{
       role:'gate',full_name:name,email,phone:phone||null // 'gate' is the actual DB-permitted role value (see inst_profiles_role_check) — UI still calls this "Staff" throughout, the two names just don't match
     }});
-    if(error||data?.error){throw new Error(data?.error||error.message||'Could not create staff account.');}
+    if(error||data?.error){throw new Error(await fnErrorText(error,data,'Could not create staff account.'));}
     res.innerHTML=`<div style="padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
       <strong>${E(name)}</strong> can log in with:<br>
       Email: <strong>${E(email)}</strong><br>
